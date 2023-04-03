@@ -1,0 +1,39 @@
+{
+    "watchDebounceTime": 1000,
+    "log4js": {
+        "replaceConsole": true,
+        "appenders": {
+            "stdout": {
+                "type": "stdout"
+            },
+            "dev": {
+                "type": "dateFile",
+                "backups": 3,
+                "maxLogSize": 5242880,
+                "alwaysIncludePattern": true,
+                "pattern": "yyyy-MM-dd.log"
+            }
+        },
+        "categories": {
+            "default": {
+                "appenders": [
+                    "stdout",
+                    "dev"
+                ],
+                "level": "info"
+            }
+        },
+        "activeCategory": "default"
+    },
+    "localServerKey": "/api",
+    "localServerProxy": "https://zzp-dog.github.io/",
+    "proxy": {
+        "/api": {
+            "target": "http://localhost:4200",
+            "changeOrigin": true,
+            "pathRewrite": {
+                "^/api": ""
+            }
+        }
+    }
+}
