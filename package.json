@@ -1,34 +1,48 @@
 {
   "name": "@bigbigbird/mock",
-  "version": "3.0.1",
+  "version": "4.0.0",
   "description": "前端mock调试",
-  "main": "index.js",
+  "main": "dist/index.js",
   "bin": {
-    "birdmock": "bin/birdmock.js"
+    "birdmock": "dist/birdmock.js"
   },
   "directories": {
     "lib": "lib"
   },
   "scripts": {
+    "init": "tsc --init",
+    "watch": "tsc -w",
+    "build": "rimraf dist && tsc",
+    "mock": "cross-env proxyServer=localhost:4200 node ./dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
     "mock",
     "mockjs",
-    "前端挡板",
-    "模拟文件下载",
-    "模拟文件上传"
+    "前端挡板"
   ],
-  "author": "bigbigbird",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "dist/**/*"
+  ],
+  "author": "zhangzhipeng",
   "license": "ISC",
   "dependencies": {
     "colors": "^1.4.0",
-    "cross-env": "^6.0.3",
     "log4js": "^5.3.0",
     "mockjs": "^1.1.0",
     "multiparty": "^4.2.3"
   },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@types/mockjs": "^1.0.7",
+    "@types/multiparty": "^0.0.33",
+    "@types/node": "^18.15.11",
+    "cross-env": "^7.0.3",
+    "rimraf": "^4.4.1",
+    "typescript": "^5.0.3"
   }
 }
