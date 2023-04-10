@@ -41,7 +41,7 @@ module.exports = {
 };
 ```
 
-1. birdmock 不依赖 webpack 等开发工具，可单独启动服务，类似 express 和 koa 搭建服务；
+1.birdmock 不依赖 webpack 等开发工具，可单独启动服务，类似 express 和 koa 搭建服务；
 
 2.proxy 中 target 表示 server 要转发以指定 api 前缀开头的请求到目标服务器的服 务器地址；
 
@@ -49,7 +49,7 @@ module.exports = {
 
 4.在 webpack 配置中，可以将 proxy 配置到本地 server，可以记录日志。
 
-## 可以单独其本地服务
+## 可以单独启动本地服务，或通过本地服务代理到 target 目标服务
 
 in package.json
 
@@ -65,7 +65,8 @@ npm run mock
 
 ```json
 "scripts": {
-    "mock:proxy": "cross-env target=https://zzp-dog.github.io/ birdmock"
+    "mock:proxy": "cross-env target=https://zzp-dog.github.io/ birdmock",,
+    "mock:proxy1": "cross-env target=https://zzp-dog.github.io/ rewrite='^/api':'/xxx' changeOrigin=true birdmock",
 }
 ```
 
