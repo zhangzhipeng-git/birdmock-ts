@@ -1,103 +1,138 @@
-# birdmock（结合mockjs开发的本地mock服务）
+# birdmock（结合 mockjs 开发的本地 mock 服务）
 
 ## 安装
 
-``` shell
+```shell
 npm i @bigbigbird/mock -D
 ```
 
-## mock配置
+## mock 配置
 
-优先读取环境变量的mockPath的路径，并自动在该目录下建立相关mock文件，没有则自动在项目根目录创建，它的默认文件结构应该是这样的：
+优先读取环境变量的 mockPath 的路径，并自动在该目录下建立相关 mock 文件，没有则自动在项目根目录创建，它的默认文件结构应该是这样的：
 
 ```*
- -项目根路径  
- -birdmock  
+ -项目根路径
+ -birdmock
     -logs           # 日志目录
     -mocks          # mock文件目录
-    -config.json    # birdmock配置文件
+    -config.js      # birdmock配置文件
+    -assets         # 静态资源
+    -upload         # 文件上传目录
 ```
 
-## 默认代理配置（in birdmock/config.json）
-
-```json
-"localServerKey": "/api",
-"localServerProxy": "https://zzp-dog.github.io/",
-"proxy": {
-    "/api": {
-        "target": "http://localhost:4200",
-        "changeOrigin": true,
-        "pathRewrite": {
-            "^/api": ""
-        }
-    }
-}
-```
-
-1.可以直接将proxy引入webpack相关的配置中；  
-
-2.proxy中target表示webpack要转发以指定api前缀开头的请求到目标服务器的服 务器地址；  
-
-3.localServerKey表示本地要代理的请求的api前缀，它对应着proxy中的api前缀，且这个前缀开头的api要转发到本地服务，前提是要在本地开启服务，birdmock的工作就是这个，它会根据localServerKey对应的proxy配置在本地创建一个本地mock服务，所以target必须是本地的服务，如果不是本地的服务，webpack会将请求转发到这个服务，后续的请求将会被webpack代理到这个服务而不是本地服务；  
-
-4.localServerProxy表示本地服务要代理的服务地址，这样就是经过两层正向代理了，第一层是webpack-dev-server代理到本地，第二层是本地代理到localServerProxy指向的服务地址。当然也可以在birdmock脚本命令中添加cross-env proxy=[https://zzp-dog.github.io/](https://zzp-dog.github.io/) 。birdmock内部会优先读取cross-env设置的环境变量中的目标代理服务地址proxy=[https://zzp-dog.github.io/](https://zzp-dog.github.io/)。
-
-## 引入到webpack相关配置
-
-``` js
-module.exports = {
-    devServer: {
-        proxy: require('./birdmock/config.json').proxy
-    }
-}
-```
-
-## mock文件示例
+## 默认代理配置（in birdmock/config.js）
 
 ```js
 module.exports = {
-    // 键值可以是函数也可以是对象
-    '/example': (params) => {
-        if (params.id === '1') {
-            return {
-                status: 200,
-                data: {
-                    content: '我是示例mock返回的数据1'
-                }
-            }
-        } else {
-            return {
-                status: 400,
-                data: {
-                    content: '我是示例mock返回的数据2'
-                }
-            }
-        }
-    }
-}
+  /** 修改 mock 文件时重启服务的防抖时间 */
+  watchDebounceTime: 1000,
+  /** 日志是否格式化响应的json数据 */
+  parseJSON: false,
+  /** 正向代理地址 */
+  server: 'localhost:4200',
+  /** 目标地址 */
+  proxy: {
+    '/api': {
+      target: 'https://zzp-dog.github.io/',
+      changeOrigin: true,
+      rewrite: url => url,
+    },
+  },
+};
 ```
 
-## package.json
+1. birdmock 不依赖 webpack 等开发工具，可单独启动服务，类似 express 和 koa 搭建服务；
 
-``` json
+2.proxy 中 target 表示 server 要转发以指定 api 前缀开头的请求到目标服务器的服 务器地址；
+
+3.server 为本地的服务地址，如: localhost:4200
+
+4.在 webpack 配置中，可以将 proxy 配置到本地 server，可以记录日志。
+
+## 可以单独其本地服务
+
+in package.json
+
+```json
 "scripts": {
-    "mock:proxy": "cross-env proxy=https://zzp-dog.github.io/ birdmock"
+    "mock": "birdmock"
 }
 ```
 
-``` shell
+```shell
+npm run mock
+```
+
+```json
+"scripts": {
+    "mock:proxy": "cross-env target=https://zzp-dog.github.io/ birdmock"
+}
+```
+
+```shell
 npm run mock:proxy
 ```
 
-备注：birdmock本地服务会优先读取脚本命令中设置的proxy值（目标代理服务地址），其次才是birdmock/config.json中的localServerProxy值。
+## 引入到 webpack 配置
+
+```js
+var config = require('./birdmock/config.js');
+module.exports = {
+  devServer: {
+    proxy: {
+      '^/api': {
+        target: config.server,
+      },
+      // '^/': {
+      //   target: config.server,
+      // },
+    },
+  },
+};
+```
+
+## mock 文件示例
+
+```js
+module.exports = {
+  // 键值可以是函数也可以是对象
+  '/example': params => {
+    if (params.id === '1') {
+      return {
+        status: 200,
+        data: {
+          content: '我是示例mock返回的数据1',
+        },
+      };
+    } else {
+      return {
+        status: 400,
+        data: {
+          content: '我是示例mock返回的数据2',
+        },
+      };
+    }
+  },
+};
+```
 
 ## 接口请求（本地服务模式）示例
 
-前提：删除birdmock/config.json中"localServerProxy":xxx和package.json中cross-env proxy=xxx。  
+in package.json
+
+```json
+"scripts": {
+    "mock": "birdmock"
+}
+```
+
+```shell
+npm run mock
+```
 
 in template
 
-``` html
+```html
 <template>
   <div id="app">
     <pre><code ref="json" class="json">{{res1|json}}</code></pre>
@@ -121,11 +156,6 @@ import axios from 'axios';
 export default class App extends Vue {
   res1: any = {};
   beforeMount() {
-    /**
-     * 开发环境会在接口前面加上'/api'，上面已经配置过以"/api"开头的接口
-     * 会被代理到本地服务，如果localServerProxy或环境变量中proxy有服务地址，
-     * 本地服务会代理请求到这个服务地址。
-     */
     const baseURL = process.env.NODE_ENV === 'development' ? '/api' : '';
     var  http = axios.create({baseURL});
     http.get('/example').then(({data}: any) => {
@@ -143,9 +173,21 @@ export default class App extends Vue {
 
 ## 接口请求（本地服务代理模式）示例
 
+in package.json
+
+```json
+"scripts": {
+    "mock:proxy": "cross-env target=https://zzp-dog.github.io/ birdmock"
+}
+```
+
+```shell
+npm run mock:proxy
+```
+
 in template
 
-``` html
+```html
 <template>
   <div id="app">
     <pre><code ref="json" class="json">{{res1|json}}</code></pre>
@@ -169,11 +211,6 @@ import axios from 'axios';
 export default class App extends Vue {
   res1: any = {};
   beforeMount() {
-    /**
-     * 开发环境会在接口前面加上'/api'，上面已经配置过以"/api"开头的接口
-     * 会被代理到本地服务，如果localServerProxy或环境变量中proxy有服务地址，
-     * 本地服务会代理请求到这个服务地址。
-     */
     const baseURL = process.env.NODE_ENV === 'development' ? '/api' : '';
     var  http = axios.create({baseURL});
     http.get('/birdmock/package.json').then(({data}: any) => {
