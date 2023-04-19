@@ -1,3 +1,15 @@
+/*
+ * File: log.ts
+ * Project: @bigbigbird/mock
+ * File Created: Thursday, 6th April 2023 4:09:06 pm
+ * Author: zhangzhipeng (1029512956@qq.com)
+ * -----
+ * Last Modified: Monday, 17th April 2023 2:48:31 pm
+ * Modified By: zhangzhipeng (1029512956@qq.com>)
+ * -----
+ * Copyright 2019 - 2023
+ */
+
 import log4js, { Configuration, type Logger } from 'log4js';
 
 const CONFIG: Configuration = {
@@ -8,7 +20,7 @@ const CONFIG: Configuration = {
       backups: 10,
       maxLogSize: 5242880,
       alwaysIncludePattern: true,
-      pattern: 'yyyy-MM-dd_HH-mm-ss.SSS.log',
+      pattern: 'yyyy-MM-dd.log',
     },
   },
   categories: {
@@ -24,7 +36,7 @@ function getLogger(logsPath: string) {
   const appenderKeys = Object.keys(appenders);
   appenderKeys.forEach(key => {
     if (appenders[key].type === 'stdout') return;
-    (<any>appenders[key]).filename = logsPath + '/';
+    (<any>appenders[key]).filename = logsPath + '/mock';
   });
 
   log4js.configure(CONFIG);

@@ -1,16 +1,15 @@
 /*
- * Created Date: Saturday, August 22nd 2019, 11:09:54 pm
- * Author: 木懵の狗纸
- * ---------------------------------------------------
- * Description: birdmock服务入口
- * 利用webpack-dev-server将api请求转发到本地的一个服务，
- * 本地服务又可以将请求转发到指定的服务
- * ---------------------------------------------------
- * Last Modified: Saturday August 22nd 2020 11:21:02 pm
- * Modified By: 木懵の狗纸
- * Contact: 1029512956@qq.com
- * Copyright (c) 2020 ZXWORK
+ * File: index.ts
+ * Project: @bigbigbird/mock
+ * File Created: Thursday, 6th April 2023 3:53:50 pm
+ * Author: zhangzhipeng (1029512956@qq.com)
+ * -----
+ * Last Modified: Monday, 17th April 2023 2:48:08 pm
+ * Modified By: zhangzhipeng (1029512956@qq.com>)
+ * -----
+ * Copyright 2019 - 2023
  */
+
 import 'colors';
 import fs from 'fs';
 import path from 'path';
@@ -20,11 +19,11 @@ import { debounce } from './util';
 export const DEFAULT_ROOT_PATH = 'birdmock';
 
 const CONFIG_FILE = 'config.js';
-const CONFIG_FILE_TEMPLATE_PATH = './example/config.js';
+const CONFIG_FILE_TEMPLATE_PATH = './template/config.js';
 
 const MOCKS_DIR = 'mocks';
 const MOCKS_FILE_TEMPLATE = 'response.js';
-const MOCKS_FILE_TEMPLATE_PATH = './example/response.js';
+const MOCKS_FILE_TEMPLATE_PATH = './template/response.js';
 
 const LOGS_DIR = 'logs';
 
@@ -39,6 +38,8 @@ export class ServerBoot {
   /**
    * 目录结构
    * birdmock
+   *  -assets
+   *  -upload
    *  -logs
    *    -xx.log
    *  -mocks
@@ -58,18 +59,26 @@ export class ServerBoot {
     // birdmock配置
     const configPath = path.resolve(mockPath, CONFIG_FILE);
     if (!fs.existsSync(configPath) || !fs.statSync(configPath).isFile()) {
-      const cfg = require(CONFIG_FILE_TEMPLATE_PATH);
-      fs.writeFileSync(configPath, JSON.stringify(cfg, null, '\t'));
+      fs.copyFileSync(
+        path.resolve(__dirname, CONFIG_FILE_TEMPLATE_PATH),
+        configPath
+      );
     }
 
     // mock数据文件路径
     const mocksPath = path.resolve(mockPath, MOCKS_DIR);
     if (!fs.existsSync(mocksPath) || !fs.statSync(mocksPath).isDirectory()) {
       fs.mkdirSync(mocksPath);
-      const exampleFilePath = path.resolve(mocksPath, MOCKS_FILE_TEMPLATE);
-      const exampleFileContent = require(MOCKS_FILE_TEMPLATE_PATH);
-      fs.writeFileSync(exampleFilePath, exampleFileContent);
     }
+    const templateFilePath = path.resolve(mocksPath, MOCKS_FILE_TEMPLATE);
+    if (
+      !fs.existsSync(templateFilePath) ||
+      !fs.statSync(templateFilePath).isFile()
+    )
+      fs.copyFileSync(
+        path.resolve(__dirname, MOCKS_FILE_TEMPLATE_PATH),
+        templateFilePath
+      );
 
     // 日志路径配置
     const logsPath = path.resolve(mockPath, LOGS_DIR);
@@ -95,18 +104,12 @@ export class ServerBoot {
   }
 
   /**
-   * 主进程监听mock服务子进程的退出，若退出则重启子进程
+   * 主进程监听mock服务子进程的退出，若非正常退出则重启子进程
    * @param {string[]} paths 服务路径，配置路径，mocks路径，logs路径
    */
   private static spawn(paths: string[]) {
     const worker = child_process.spawn('node', paths, {
       stdio: [process.stdin, process.stdout, process.stderr],
-    });
-    worker.on('exit', code => {
-      // 非正常退出或非异常退出时才重启
-      if (code !== 0 && code !== null) {
-        this.spawn(paths);
-      }
     });
     return worker;
   }
@@ -118,7 +121,7 @@ export class ServerBoot {
    */
   private static listener(paths: string[], debounceTime = 1000) {
     return debounce(() => {
-      this.worker.kill('SIGKILL');
+      this.worker.kill();
       console.log('服务器重启中...'.yellow.bold);
       this.worker = this.spawn(paths);
     }, debounceTime);
@@ -130,6 +133,14 @@ export class ServerBoot {
     const debounceTime = require(configPath).watchDebounceTime;
 
     this.worker = this.spawn(paths);
+    this.worker.on('exit', (code, signal) => {
+      // 正常退出不重启服务
+      if (code === 0) return;
+      // 正常终止不重启服务
+      if (signal === 'SIGTERM') return;
+
+      this.spawn(paths);
+    });
 
     fs.watch(
       configPath,
@@ -141,5 +152,10 @@ export class ServerBoot {
       { encoding: 'utf8', recursive: true },
       this.listener(paths, debounceTime)
     );
+
+    process.on('SIGTERM', () => {
+      this.worker.kill();
+      process.exit(0);
+    });
   }
 }

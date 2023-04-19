@@ -29,23 +29,30 @@ module.exports = {
   /** 日志是否格式化响应的json数据 */
   parseJSON: false,
   /** 正向代理地址 */
-  server: 'localhost:4200',
+  server: 'localhost:4201',
   /** 目标地址 */
   proxy: {
     '/api': {
-      target: 'https://zzp-dog.github.io/',
+      target: 'http:x.x.x.x:8080',
       changeOrigin: true,
       rewrite: url => url,
     },
   },
+  /** 跨域配置 */
+  cors: {
+    origin: 'localhost:4200',
+    headers: 'xxx,yyy,zzz',
+    methods: 'GET,POST',
+    credentials: 'true',
+  },
 };
 ```
 
-1.birdmock 不依赖 webpack 等开发工具，可单独启动服务，类似 express 和 koa 搭建服务；
+1.birdmock 不依赖 webpack 等开发工具，可单独启动服务，支持跨域、请求静态资源和文件上传；
 
-2.proxy 中 target 表示 server 要转发以指定 api 前缀开头的请求到目标服务器的服 务器地址；
+2.proxy 中 target 表示 server 要转发以指定 api 前缀开头的请求到目标服务器的服务器地址；
 
-3.server 为本地的服务地址，如: localhost:4200
+3.server 为本地的服务地址，如: localhost:4201
 
 4.在 webpack 配置中，可以将 proxy 配置到本地 server，可以记录日志。
 
@@ -65,8 +72,8 @@ npm run mock
 
 ```json
 "scripts": {
-    "mock:proxy": "cross-env target=https://zzp-dog.github.io/ birdmock",,
-    "mock:proxy1": "cross-env target=https://zzp-dog.github.io/ rewrite='^/api':'/xxx' changeOrigin=true birdmock",
+    "mock:proxy": "cross-env target=https://zhangzhipeng-git.github.io/ birdmock",,
+    "mock:proxy1": "cross-env target=https://zhangzhipeng-git.github.io/ rewrite='^/api':'/xxx' changeOrigin=true birdmock",
 }
 ```
 
@@ -178,7 +185,7 @@ in package.json
 
 ```json
 "scripts": {
-    "mock:proxy": "cross-env target=https://zzp-dog.github.io/ birdmock"
+    "mock:proxy": "cross-env target=https://zhangzhipeng-git.github.io/ birdmock"
 }
 ```
 

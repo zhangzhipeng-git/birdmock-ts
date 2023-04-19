@@ -1,6 +1,6 @@
 {
   "name": "@bigbigbird/mock",
-  "version": "4.0.0",
+  "version": "5.0.1",
   "description": "前端mock调试",
   "main": "dist/index.js",
   "bin": {
@@ -13,7 +13,7 @@
     "init": "tsc --init",
     "watch": "tsc -w",
     "build": "rimraf dist && tsc",
-    "mock": "cross-env proxyServer=localhost:4200 node ./dist/index.js",
+    "mock": "node ./dist/birdmock.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -24,7 +24,8 @@
   "files": [
     "LICENSE",
     "README.md",
-    "dist/**/*"
+    "dist/**/*",
+    "cert/**/*"
   ],
   "author": "zhangzhipeng",
   "license": "ISC",

@@ -1,4 +1,17 @@
+/*
+ * File: server.ts
+ * Project: @bigbigbird/mock
+ * File Created: Monday, 10th April 2023 2:11:35 pm
+ * Author: zhangzhipeng (1029512956@qq.com)
+ * -----
+ * Last Modified: Monday, 17th April 2023 2:48:40 pm
+ * Modified By: zhangzhipeng (1029512956@qq.com>)
+ * -----
+ * Copyright 2019 - 2023
+ */
+
 import 'colors';
+import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import https from 'https';
@@ -19,6 +32,10 @@ enum RequestEnum {
   OPTIONS = 'OPTIONS',
 }
 
+const LOCAL_REG = /localhost|127\.0\.0\.1/;
+const DEFAULT_SERVER = 'localhost:4201';
+const NOT_FOND = { code: 404, msg: '未找到注册的接口' };
+
 class Server {
   /** 服务器 */
   server!: http.Server;
@@ -32,68 +49,91 @@ class Server {
   log!: Logger;
 
   constructor() {
-    this.getPaths();
     this.setRootPath();
+    this.setConfig();
     this.setLog();
+
     this.createServer();
     this.startServer();
   }
 
-  startServer() {
-    const { server, proxy } = this.config;
-    if (!server) return;
-
-    const arr = server.split(':');
-    if (!arr[0]) return;
-
-    let port = arr[2] ? +arr[2] : arr[1] ? +arr[1] : 80;
-    const mocksCount = Object.keys(this.mocks).length;
-
-    this.server.listen(port, () => {
-      if (!proxy) {
-        console.log(
-          '='.repeat(5).rainbow.bold.toString() +
-            '本地模式已启动'.green.bold +
-            `{ proxy => ${server} } { 接口数量:${mocksCount} }`.yellow +
-            '='.repeat(5).rainbow.bold
-        );
-        return;
-      } else {
-        console.log(
-          '='.repeat(5).rainbow.bold.toString() +
-            `代理模式已启动`.green.bold +
-            `{ 接口数量:${mocksCount} }`.yellow +
-            '='.repeat(5).rainbow.bold
-        );
-        Object.keys(proxy).forEach(k => {
-          console.log(`{ ${k} => ${proxy[k].target} }`.yellow);
-        });
-      }
-    });
+  /**
+   * 规范化链接
+   * @param {string} url 链接
+   */
+  normalized(url: string) {
+    if (!url) return '';
+    if (url[url.length - 1] === '/') url = url.slice(0, -1);
+    if (url.indexOf('://') < 0) return `http://${url}`;
+    return url;
   }
 
-  /** 获取父进程传过来参数，路径集合 */
+  /**
+   * 获取端口
+   * @param {string} url 链接
+   */
+  getPort(url: string) {
+    if (!url) return;
+    if (!url.includes(':')) return 80;
+    const arr = url.split(':');
+    return arr[2] ? +arr[2] : arr[1] ? +arr[1] : 80;
+  }
+
+  /**
+   * 判断是否代理到server
+   * @param {string} host 目标请求主机
+   * @param {string} server 本地服务
+   */
+  isProxy2Server(host: string, server: string) {
+    if (!host || !server) return false;
+    host = this.normalized(host);
+    server = this.normalized(server);
+    if (host === server) return true;
+
+    if (LOCAL_REG.test(host) && LOCAL_REG.test(server)) {
+      const hostPort = this.getPort(host);
+      const serverPort = this.getPort(server);
+      return hostPort === serverPort;
+    }
+
+    return false;
+  }
+
+  /**
+   * 获取父进程传过来参数，路径集合
+   */
   getPaths() {
     return process.argv.slice(2);
   }
-  /** 路径解析 */
+  /**
+   * 路径解析
+   */
   resolve(...dir: string[]) {
     return path.resolve(process.cwd(), ...dir);
   }
 
-  /** 设置birdmock根目录 */
+  /**
+   * 设置birdmock根目录
+   */
   setRootPath() {
     this.rootPath = this.resolve(process.env.mockRootPath || DEFAULT_ROOT_PATH);
   }
-  /** 设置配置项 */
+  /**
+   * 设置配置项
+   */
   setConfig() {
     const configPath = this.getPaths()[0];
     const config = require(configPath) as Config;
-    let { server, proxy, parseJSON } = config;
+    let {
+      watchDebounceTime = 1000,
+      server = DEFAULT_SERVER,
+      parseJSON = false,
+      proxy,
+    } = config;
 
     const {
-      server: cmdServer,
       parseJSON: cmdParseJSON,
+      server: cmdServer,
       target,
       rewrite,
       changeOrigin,
@@ -114,17 +154,26 @@ class Server {
       };
     }
 
-    let svr = cmdServer || server;
-    if (svr && svr.indexOf('http') < 0) svr = `http://${svr}`;
+    if (proxy) {
+      Object.keys(proxy).forEach((k: string) => {
+        const p = proxy![k];
+        p.target = this.normalized(p.target);
+      });
+    }
 
     this.config = {
-      parseJSON: cmdParseJSON === 'true' || parseJSON,
-      server: svr,
+      watchDebounceTime,
+      parseJSON:
+        cmdParseJSON !== undefined ? cmdParseJSON === 'true' : parseJSON,
+      server: this.normalized(cmdServer || server),
       proxy,
     };
   }
-  /** 设置mock数据 */
+  /**
+   * 设置mock数据
+   */
   setMocks() {
+    if (!!this.mocks) return;
     const mocksPath = this.getPaths()[1];
     const mocks = {};
     forEachFile(mocksPath, file => {
@@ -142,7 +191,9 @@ class Server {
     });
     this.mocks = mocks;
   }
-  /** 设置 log */
+  /**
+   * 设置 log
+   */
   setLog() {
     const logsPath = this.getPaths()[2];
     this.log = getLogger(logsPath);
@@ -169,18 +220,12 @@ class Server {
     return req.headers['content-type']!.indexOf(contentType) > -1;
   }
 
+  /**
+   * 获取接口地址，去掉协议、域名/ip和端口
+   * @param {http.IncomingMessage} req 请求体
+   */
   getApi(req: http.IncomingMessage) {
-    const { server } = this.config;
-    let svr = server ?? '';
-
-    if (svr && svr.indexOf('http') < 0) svr = `http://${svr}`;
-
-    if (svr && svr[svr.length - 1] === '/') svr = svr.slice(0, -1);
-
-    let url = req.url ?? '';
-    if (url && url.indexOf('http') < 0) url = `http://${url}`;
-
-    return url.replace(svr, '');
+    return req.url?.split('?')[0] ?? '';
   }
 
   /**
@@ -205,17 +250,35 @@ class Server {
     );
   }
 
-  /** 开启跨域 */
-  enableCROS(res: http.ServerResponse) {
-    res.setHeader('Access-Control-Allow-Headers', '*');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', '*');
+  /**
+   * 开启跨域
+   */
+  enableCORS(res: http.ServerResponse) {
+    const { cors } = this.config;
+    if (!cors) return;
+    res.setHeader('Access-Control-Allow-Origin', cors.origin || '*');
+    res.setHeader('Access-Control-Allow-Headers', cors.headers || '*');
+    res.setHeader('Access-Control-Allow-Methods', cors.methods || '*');
+    res.setHeader(
+      'Access-Control-Allow-Credentials',
+      (cors.credentials || true) + ''
+    );
   }
 
+  /**
+   * 处理本地请求
+   * @param {http.IncomingHttpHeaders} req 请求
+   * @param {http.ServerResponse} res 响应
+   */
   handleLocalServerRequest(
     req: http.IncomingMessage,
     res: http.ServerResponse
   ) {
+    req.on('error', e => {
+      this.log.error(e);
+      res.end(JSON.stringify(e));
+    });
+
     let params,
       rawData = '',
       method = req.method;
@@ -231,7 +294,6 @@ class Server {
           rawData += chunk;
         });
         req.on('end', () => {
-          let params;
           if (this.expectRequestType(req, 'json')) params = JSON.parse(rawData);
           else if (this.expectRequestType(req, 'generic'))
             params = qs.parse(rawData);
@@ -248,10 +310,20 @@ class Server {
     this.localServerResponse(req, res, params);
   }
 
+  /**
+   * 处理代理请求
+   * @param {http.IncomingHttpHeaders} req 请求
+   * @param {http.ServerResponse} res 响应
+   */
   handleProxyServerRequest(
     req: http.IncomingMessage,
     res: http.ServerResponse
   ) {
+    req.on('error', e => {
+      this.log.error(e);
+      res.end(JSON.stringify(e));
+    });
+
     const { proxy } = this.config;
     if (!proxy) return;
 
@@ -263,19 +335,21 @@ class Server {
     });
     if (!apiKey) {
       res.statusCode = 404;
-      res.end();
+      res.setHeader('content-type', 'application/json;charset=utf-8');
+      res.end(JSON.stringify(NOT_FOND));
       return;
     }
 
     const { changeOrigin, rewrite, target } = proxy[apiKey];
     const arr = target.split(':');
     // 默认http协议
-    const protocol = arr[0].indexOf('http') > -1 ? arr[0] : 'http';
+    const protocol = arr[0];
     const hostname = arr[1].substring(2, arr[1].length);
     const method = req.method;
     const port = arr[2] ? +arr[2] : 80;
 
-    if (changeOrigin) req.headers.host = `${hostname}${port ? ':' + port : ''}`;
+    if (changeOrigin)
+      req.headers.host = `${hostname}${port != 80 ? ':' + port : ''}`;
     if (!req.headers['content-type'])
       req.headers['content-type'] =
         'application/x-www-form-urlencoded;charset=UTF-8';
@@ -285,7 +359,7 @@ class Server {
       protocol: `${protocol}:`,
       port,
       hostname,
-      path: rewrite ? rewrite(api) : api,
+      path: rewrite ? rewrite(req.url ?? '') : req.url,
       method,
     };
 
@@ -304,75 +378,25 @@ class Server {
           else if (this.expectRequestType(req, 'generic'))
             params = qs.parse(rawData);
           else params = rawData;
+          this.proxyServerResponse(req, res, params, httpX, options);
         });
-        break;
+        return;
       case RequestEnum.GET:
       case RequestEnum.DELETE:
       case RequestEnum.OPTIONS:
       default:
         params = qs.parse(req.url!.split('?')[1]);
-        break;
+        this.proxyServerResponse(req, res, params, httpX, options);
+        return;
     }
-    this.proxyServerResponse(req, res, params, httpX, options);
   }
 
-  proxyServerResponse(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    params: any,
-    httpX: any,
-    options: any
-  ) {
-    const { parseJSON } = this.config;
-    this.log.info(
-      `[${req.headers['host']}] [${req.url}]${
-        req.method
-      }=>请求参数:\r\n${JSON.stringify(
-        params,
-        undefined,
-        parseJSON ? '\t' : undefined
-      )}`
-    );
-
-    const req_ = httpX.request(options, (res_: http.IncomingMessage) => {
-      let buffer: any = [];
-      // 这里不设置字符编码，默认是Buffer对象（nodejs官网api有说明）
-      res_.on('data', function (chunk) {
-        buffer.push(chunk);
-      });
-      res_.on('end', () => {
-        buffer = Buffer.concat(buffer);
-        res.setHeader('Content-Type', res_.headers['Content-Type'] ?? '');
-        // cros
-        this.enableCROS(res);
-        res.statusCode = res_.statusCode || res.statusCode;
-        res.end(buffer);
-
-        let resStr,
-          bf = buffer;
-        // 如果是gzip压缩的，需要解压以下
-        if ((res_.headers['content-encoding'] || '').indexOf('gzip') > -1)
-          bf = gunzipSync(buffer);
-        resStr = bf.toString('utf-8');
-
-        try {
-          const obj = JSON.parse(resStr);
-          this.log.info(
-            `[${req.headers['host']}] [${req.url}]${req.method}=>响应:\r\n` +
-              JSON.stringify(obj, void 0, parseJSON ? '\t' : void 0)
-          );
-        } catch (e) {
-          console.log('对方返回了非json格式数据~'.red.bold);
-          this.log.info(
-            `[${req.headers['host']}] [${req.url}]${req.method}=>响应:\r\n` +
-              buffer
-          );
-        }
-      });
-    });
-    req_.end();
-  }
-
+  /**
+   * 上传文件
+   * @param {http.IncomingMessage} req 请求
+   * @param {http.ServerResponse} res 响应
+   * @param params ?
+   */
   handleLocalUpload(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -391,6 +415,12 @@ class Server {
     });
   }
 
+  /**
+   * 本地服务响应
+   * @param {http.IncomingMessage} req 请求
+   * @param {http.ServerResponse} res 响应
+   * @param {object} params 请求参数
+   */
   localServerResponse(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -408,7 +438,7 @@ class Server {
       )}`
     );
 
-    this.enableCROS(res);
+    this.enableCORS(res);
     if (req.method === RequestEnum.OPTIONS) return res.end();
     const api = this.getApi(req);
     const key = this.getMatchKey(Object.keys(this.mocks), api);
@@ -416,7 +446,8 @@ class Server {
     // 未找到注册的接口
     if (!key) {
       res.statusCode = 404;
-      res.end();
+      res.setHeader('content-type', 'application/json;charset=utf-8');
+      res.end(JSON.stringify(NOT_FOND));
       return;
     }
 
@@ -433,7 +464,7 @@ class Server {
       let isFile = true;
       const match = key.match(/\.(?:svg|jpg|jpeg|png|gif|wav|txt|css|html|js)/);
       if (match) {
-        // 根据接口地址后缀来匹配，模拟返回文件流，如：http://localhost:4200/api/xxx.jpg
+        // 根据接口地址后缀来匹配，模拟返回文件流，如：http://localhost:4201/api/xxx.jpg
         const CT: any = {
           '.svg': 'image/svg+xml',
           '.jpg': 'image/jpeg',
@@ -477,26 +508,152 @@ class Server {
     }, (value && value.timeout) || 0);
   }
 
+  /**
+   * 代理响应
+   * @param {http.IncomingMessage} req 请求
+   * @param {http.ServerResponse} res 响应
+   * @param {object} params 请求参数
+   * @param {http | https} httpX 协议
+   * @param {object} options 请求头
+   */
+  proxyServerResponse(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    params: any,
+    httpX: any,
+    options: any
+  ) {
+    const { parseJSON, server } = this.config;
+
+    if (this.isProxy2Server(req.headers.host || '', server)) {
+      this.setMocks();
+      this.localServerResponse(req, res, params);
+      return;
+    }
+
+    this.log.info(
+      `[${req.headers['host']}] [${req.url}]${
+        req.method
+      }=>请求参数:\r\n${JSON.stringify(
+        params,
+        undefined,
+        parseJSON ? '\t' : undefined
+      )}`
+    );
+
+    httpX
+      .request(options, (res_: http.IncomingMessage) => {
+        let buffer: any = [];
+        // 这里不设置字符编码，默认是Buffer对象（nodejs官网api有说明）
+        res_.on('data', function (chunk) {
+          buffer.push(chunk);
+        });
+        res_.on('end', () => {
+          buffer = Buffer.concat(buffer);
+          res.setHeader('Content-Type', res_.headers['Content-Type'] ?? '');
+          // CORS
+          this.enableCORS(res);
+          res.statusCode = res_.statusCode || res.statusCode;
+          res.end(buffer);
+
+          // 以下流程仅用于日志打印
+          let resStr,
+            bf = buffer;
+          // 如果是gzip压缩的，需要解压一下
+          if ((res_.headers['content-encoding'] || '').indexOf('gzip') > -1)
+            bf = gunzipSync(buffer);
+          resStr = bf.toString('utf-8');
+
+          try {
+            const obj = JSON.parse(resStr);
+            this.log.info(
+              `[${req.headers['host']}] [${req.url}]${req.method}=>响应:\r\n` +
+                JSON.stringify(obj, void 0, parseJSON ? '\t' : void 0)
+            );
+          } catch (e) {
+            console.log('对方返回了非json格式数据~'.red.bold);
+            this.log.info(
+              `[${req.headers['host']}] [${req.url}]${req.method}=>响应:\r\n` +
+                buffer
+            );
+          }
+        });
+      })
+      .end()
+      .on('error', (e: Error) => {
+        this.log.error(e);
+        res.end(JSON.stringify(e));
+      });
+  }
+
   createServer() {
-    const { proxy } = this.config;
+    const { proxy, server } = this.config;
+    let hp = http as ANY;
+    let args = [];
+
+    if (server && server.indexOf('https') > -1) {
+      const options = {
+        key: fs.readFileSync(path.resolve(process.cwd(), 'cert/server.key')),
+        cert: fs.readFileSync(path.resolve(process.cwd(), 'cert/server.crt')),
+      };
+      args.push(options);
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+      hp = https;
+    }
+
     if (!proxy) {
       this.setMocks();
-      this.createLocalServer();
+      args.push(this.handleLocalServerRequest.bind(this));
+      this.server = hp.createServer(...args);
       return;
     } else {
-      this.createProxyServer();
+      args.push(this.handleProxyServerRequest.bind(this));
+      this.server = hp.createServer(...args);
     }
   }
 
-  createLocalServer() {
-    this.server = http.createServer(this.handleLocalServerRequest);
-  }
-  createProxyServer() {
-    this.server = http.createServer(this.handleProxyServerRequest);
+  /**
+   * 启动服务
+   */
+  startServer() {
+    const { server = DEFAULT_SERVER, proxy } = this.config;
+    const arr = server.split(':');
+    if (!arr[0]) return;
+    let port = arr[2] ? +arr[2] : arr[1] ? +arr[1] : 80;
+
+    this.server.listen(port, () => {
+      if (!proxy) {
+        const mocksCount = Object.keys(this.mocks).length;
+        console.log(
+          '='.repeat(5).rainbow.bold.toString() +
+            '本地模式已启动'.green.bold +
+            `{ proxy => ${server} } { 接口数量:${mocksCount} }`.yellow +
+            '='.repeat(5).rainbow.bold
+        );
+        return;
+      } else {
+        console.log(
+          '='.repeat(5).rainbow.bold.toString() +
+            `代理模式已启动`.green.bold +
+            '='.repeat(5).rainbow.bold
+        );
+        Object.keys(proxy).forEach(k => {
+          console.log(`{ ${k} => ${proxy[k].target} }`.yellow);
+        });
+      }
+    });
+    this.server.on('error', e => {
+      console.error(e);
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', () => this.server.close(() => process.exit(0)));
   }
 }
 
-new Server();
-process.on('SIGKILL', function () {
+try {
+  new Server();
+} catch (e) {
+  console.error(e);
   process.exit(0);
-});
+}

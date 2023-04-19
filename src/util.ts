@@ -1,14 +1,15 @@
 /*
- * Created Date: Saturday, August 22nd 2020, 11:09:54 pm
- * Author: 木懵の狗纸
- * ---------------------------------------------------
- * Description: birdmock工具
- * ---------------------------------------------------
- * Last Modified: Sunday August 23rd 2020 11:15:53 pm
- * Modified By: 木懵の狗纸
- * Contact: 1029512956@qq.com
- * Copyright (c) 2020 ZXWORK
+ * File: util.ts
+ * Project: @bigbigbird/mock
+ * File Created: Thursday, 6th April 2023 4:09:48 pm
+ * Author: zhangzhipeng (1029512956@qq.com)
+ * -----
+ * Last Modified: Monday, 17th April 2023 2:48:51 pm
+ * Modified By: zhangzhipeng (1029512956@qq.com>)
+ * -----
+ * Copyright 2019 - 2023
  */
+
 import fs from 'fs';
 import os from 'os';
 

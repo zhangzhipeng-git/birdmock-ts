@@ -24,6 +24,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 require("colors");
+var fs_1 = __importDefault(require("fs"));
 var path_1 = __importDefault(require("path"));
 var http_1 = __importDefault(require("http"));
 var https_1 = __importDefault(require("https"));
@@ -43,42 +44,48 @@ var RequestEnum;
     RequestEnum["DELETE"] = "DELETE";
     RequestEnum["OPTIONS"] = "OPTIONS";
 })(RequestEnum || (RequestEnum = {}));
+var LOCAL_REG = /localhost|127\.0\.0\.1/;
+var DEFAULT_SERVER = 'localhost:4201';
+var NOT_FOND = { code: 404, msg: '未找到注册的接口' };
 var Server = (function () {
     function Server() {
         this.rootPath = '';
-        this.getPaths();
         this.setRootPath();
+        this.setConfig();
         this.setLog();
         this.createServer();
         this.startServer();
     }
-    Server.prototype.startServer = function () {
-        var _a = this.config, server = _a.server, proxy = _a.proxy;
-        if (!server)
+    Server.prototype.normalized = function (url) {
+        if (!url)
+            return '';
+        if (url[url.length - 1] === '/')
+            url = url.slice(0, -1);
+        if (url.indexOf('://') < 0)
+            return "http://".concat(url);
+        return url;
+    };
+    Server.prototype.getPort = function (url) {
+        if (!url)
             return;
-        var arr = server.split(':');
-        if (!arr[0])
-            return;
-        var port = arr[2] ? +arr[2] : arr[1] ? +arr[1] : 80;
-        var mocksCount = Object.keys(this.mocks).length;
-        this.server.listen(port, function () {
-            if (!proxy) {
-                console.log('='.repeat(5).rainbow.bold.toString() +
-                    '本地模式已启动'.green.bold +
-                    "{ proxy => ".concat(server, " } { \u63A5\u53E3\u6570\u91CF:").concat(mocksCount, " }").yellow +
-                    '='.repeat(5).rainbow.bold);
-                return;
-            }
-            else {
-                console.log('='.repeat(5).rainbow.bold.toString() +
-                    "\u4EE3\u7406\u6A21\u5F0F\u5DF2\u542F\u52A8".green.bold +
-                    "{ \u63A5\u53E3\u6570\u91CF:".concat(mocksCount, " }").yellow +
-                    '='.repeat(5).rainbow.bold);
-                Object.keys(proxy).forEach(function (k) {
-                    console.log("{ ".concat(k, " => ").concat(proxy[k].target, " }").yellow);
-                });
-            }
-        });
+        if (!url.includes(':'))
+            return 80;
+        var arr = url.split(':');
+        return arr[2] ? +arr[2] : arr[1] ? +arr[1] : 80;
+    };
+    Server.prototype.isProxy2Server = function (host, server) {
+        if (!host || !server)
+            return false;
+        host = this.normalized(host);
+        server = this.normalized(server);
+        if (host === server)
+            return true;
+        if (LOCAL_REG.test(host) && LOCAL_REG.test(server)) {
+            var hostPort = this.getPort(host);
+            var serverPort = this.getPort(server);
+            return hostPort === serverPort;
+        }
+        return false;
     };
     Server.prototype.getPaths = function () {
         return process.argv.slice(2);
@@ -94,10 +101,11 @@ var Server = (function () {
         this.rootPath = this.resolve(process.env.mockRootPath || _1.DEFAULT_ROOT_PATH);
     };
     Server.prototype.setConfig = function () {
+        var _this = this;
         var configPath = this.getPaths()[0];
         var config = require(configPath);
-        var server = config.server, proxy = config.proxy, parseJSON = config.parseJSON;
-        var _a = process.env, cmdServer = _a.server, cmdParseJSON = _a.parseJSON, target = _a.target, rewrite = _a.rewrite, changeOrigin = _a.changeOrigin;
+        var _a = config.watchDebounceTime, watchDebounceTime = _a === void 0 ? 1000 : _a, _b = config.server, server = _b === void 0 ? DEFAULT_SERVER : _b, _c = config.parseJSON, parseJSON = _c === void 0 ? false : _c, proxy = config.proxy;
+        var _d = process.env, cmdParseJSON = _d.parseJSON, cmdServer = _d.server, target = _d.target, rewrite = _d.rewrite, changeOrigin = _d.changeOrigin;
         if (target) {
             var arr_1 = [''];
             if (rewrite)
@@ -114,16 +122,22 @@ var Server = (function () {
                 },
             };
         }
-        var svr = cmdServer || server;
-        if (svr && svr.indexOf('http') < 0)
-            svr = "http://".concat(svr);
+        if (proxy) {
+            Object.keys(proxy).forEach(function (k) {
+                var p = proxy[k];
+                p.target = _this.normalized(p.target);
+            });
+        }
         this.config = {
-            parseJSON: cmdParseJSON === 'true' || parseJSON,
-            server: svr,
+            watchDebounceTime: watchDebounceTime,
+            parseJSON: cmdParseJSON !== undefined ? cmdParseJSON === 'true' : parseJSON,
+            server: this.normalized(cmdServer || server),
             proxy: proxy,
         };
     };
     Server.prototype.setMocks = function () {
+        if (!!this.mocks)
+            return;
         var mocksPath = this.getPaths()[1];
         var mocks = {};
         (0, util_1.forEachFile)(mocksPath, function (file) {
@@ -159,17 +173,8 @@ var Server = (function () {
         return req.headers['content-type'].indexOf(contentType) > -1;
     };
     Server.prototype.getApi = function (req) {
-        var _a;
-        var server = this.config.server;
-        var svr = server !== null && server !== void 0 ? server : '';
-        if (svr && svr.indexOf('http') < 0)
-            svr = "http://".concat(svr);
-        if (svr && svr[svr.length - 1] === '/')
-            svr = svr.slice(0, -1);
-        var url = (_a = req.url) !== null && _a !== void 0 ? _a : '';
-        if (url && url.indexOf('http') < 0)
-            url = "http://".concat(url);
-        return url.replace(svr, '');
+        var _a, _b;
+        return (_b = (_a = req.url) === null || _a === void 0 ? void 0 : _a.split('?')[0]) !== null && _b !== void 0 ? _b : '';
     };
     Server.prototype.getMatchKey = function (keys, api) {
         if (api.indexOf('?') > -1)
@@ -184,14 +189,22 @@ var Server = (function () {
                 arr2.every(function (dir, i) { return dir === '*' || dir === arr1[i]; }));
         }) || null);
     };
-    Server.prototype.enableCROS = function (res) {
-        res.setHeader('Access-Control-Allow-Headers', '*');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', '*');
+    Server.prototype.enableCORS = function (res) {
+        var cors = this.config.cors;
+        if (!cors)
+            return;
+        res.setHeader('Access-Control-Allow-Origin', cors.origin || '*');
+        res.setHeader('Access-Control-Allow-Headers', cors.headers || '*');
+        res.setHeader('Access-Control-Allow-Methods', cors.methods || '*');
+        res.setHeader('Access-Control-Allow-Credentials', (cors.credentials || true) + '');
     };
     Server.prototype.handleLocalServerRequest = function (req, res) {
         var _this = this;
         var _a, _b;
+        req.on('error', function (e) {
+            _this.log.error(e);
+            res.end(JSON.stringify(e));
+        });
         var params, rawData = '', method = req.method;
         switch (method) {
             case RequestEnum.POST:
@@ -205,7 +218,6 @@ var Server = (function () {
                     rawData += chunk;
                 });
                 req.on('end', function () {
-                    var params;
                     if (_this.expectRequestType(req, 'json'))
                         params = JSON.parse(rawData);
                     else if (_this.expectRequestType(req, 'generic'))
@@ -225,6 +237,11 @@ var Server = (function () {
     };
     Server.prototype.handleProxyServerRequest = function (req, res) {
         var _this = this;
+        var _a;
+        req.on('error', function (e) {
+            _this.log.error(e);
+            res.end(JSON.stringify(e));
+        });
         var proxy = this.config.proxy;
         if (!proxy)
             return;
@@ -235,17 +252,18 @@ var Server = (function () {
         });
         if (!apiKey) {
             res.statusCode = 404;
-            res.end();
+            res.setHeader('content-type', 'application/json;charset=utf-8');
+            res.end(JSON.stringify(NOT_FOND));
             return;
         }
-        var _a = proxy[apiKey], changeOrigin = _a.changeOrigin, rewrite = _a.rewrite, target = _a.target;
+        var _b = proxy[apiKey], changeOrigin = _b.changeOrigin, rewrite = _b.rewrite, target = _b.target;
         var arr = target.split(':');
-        var protocol = arr[0].indexOf('http') > -1 ? arr[0] : 'http';
+        var protocol = arr[0];
         var hostname = arr[1].substring(2, arr[1].length);
         var method = req.method;
         var port = arr[2] ? +arr[2] : 80;
         if (changeOrigin)
-            req.headers.host = "".concat(hostname).concat(port ? ':' + port : '');
+            req.headers.host = "".concat(hostname).concat(port != 80 ? ':' + port : '');
         if (!req.headers['content-type'])
             req.headers['content-type'] =
                 'application/x-www-form-urlencoded;charset=UTF-8';
@@ -254,7 +272,7 @@ var Server = (function () {
             protocol: "".concat(protocol, ":"),
             port: port,
             hostname: hostname,
-            path: rewrite ? rewrite(api) : api,
+            path: rewrite ? rewrite((_a = req.url) !== null && _a !== void 0 ? _a : '') : req.url,
             method: method,
         };
         var httpX = arr[0] === 'https' ? https_1.default : http_1.default;
@@ -272,50 +290,17 @@ var Server = (function () {
                         params = querystring_1.default.parse(rawData);
                     else
                         params = rawData;
+                    _this.proxyServerResponse(req, res, params, httpX, options);
                 });
-                break;
+                return;
             case RequestEnum.GET:
             case RequestEnum.DELETE:
             case RequestEnum.OPTIONS:
             default:
                 params = querystring_1.default.parse(req.url.split('?')[1]);
-                break;
+                this.proxyServerResponse(req, res, params, httpX, options);
+                return;
         }
-        this.proxyServerResponse(req, res, params, httpX, options);
-    };
-    Server.prototype.proxyServerResponse = function (req, res, params, httpX, options) {
-        var _this = this;
-        var parseJSON = this.config.parseJSON;
-        this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u8BF7\u6C42\u53C2\u6570:\r\n").concat(JSON.stringify(params, undefined, parseJSON ? '\t' : undefined)));
-        var req_ = httpX.request(options, function (res_) {
-            var buffer = [];
-            res_.on('data', function (chunk) {
-                buffer.push(chunk);
-            });
-            res_.on('end', function () {
-                var _a;
-                buffer = buffer_1.Buffer.concat(buffer);
-                res.setHeader('Content-Type', (_a = res_.headers['Content-Type']) !== null && _a !== void 0 ? _a : '');
-                _this.enableCROS(res);
-                res.statusCode = res_.statusCode || res.statusCode;
-                res.end(buffer);
-                var resStr, bf = buffer;
-                if ((res_.headers['content-encoding'] || '').indexOf('gzip') > -1)
-                    bf = (0, zlib_1.gunzipSync)(buffer);
-                resStr = bf.toString('utf-8');
-                try {
-                    var obj = JSON.parse(resStr);
-                    _this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u54CD\u5E94:\r\n") +
-                        JSON.stringify(obj, void 0, parseJSON ? '\t' : void 0));
-                }
-                catch (e) {
-                    console.log('对方返回了非json格式数据~'.red.bold);
-                    _this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u54CD\u5E94:\r\n") +
-                        buffer);
-                }
-            });
-        });
-        req_.end();
     };
     Server.prototype.handleLocalUpload = function (req, res, params) {
         var _this = this;
@@ -332,14 +317,15 @@ var Server = (function () {
         var _this = this;
         var parseJSON = this.config.parseJSON;
         this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u8BF7\u6C42\u53C2\u6570:\r\n").concat(JSON.stringify(params, undefined, parseJSON ? '\t' : undefined)));
-        this.enableCROS(res);
+        this.enableCORS(res);
         if (req.method === RequestEnum.OPTIONS)
             return res.end();
         var api = this.getApi(req);
         var key = this.getMatchKey(Object.keys(this.mocks), api);
         if (!key) {
             res.statusCode = 404;
-            res.end();
+            res.setHeader('content-type', 'application/json;charset=utf-8');
+            res.end(JSON.stringify(NOT_FOND));
             return;
         }
         var value = this.mocks[key];
@@ -386,26 +372,111 @@ var Server = (function () {
                     : JSON.stringify(value, undefined, parseJSON ? '\t' : undefined)));
         }, (value && value.timeout) || 0);
     };
+    Server.prototype.proxyServerResponse = function (req, res, params, httpX, options) {
+        var _this = this;
+        var _a = this.config, parseJSON = _a.parseJSON, server = _a.server;
+        if (this.isProxy2Server(req.headers.host || '', server)) {
+            this.setMocks();
+            this.localServerResponse(req, res, params);
+            return;
+        }
+        this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u8BF7\u6C42\u53C2\u6570:\r\n").concat(JSON.stringify(params, undefined, parseJSON ? '\t' : undefined)));
+        httpX
+            .request(options, function (res_) {
+            var buffer = [];
+            res_.on('data', function (chunk) {
+                buffer.push(chunk);
+            });
+            res_.on('end', function () {
+                var _a;
+                buffer = buffer_1.Buffer.concat(buffer);
+                res.setHeader('Content-Type', (_a = res_.headers['Content-Type']) !== null && _a !== void 0 ? _a : '');
+                _this.enableCORS(res);
+                res.statusCode = res_.statusCode || res.statusCode;
+                res.end(buffer);
+                var resStr, bf = buffer;
+                if ((res_.headers['content-encoding'] || '').indexOf('gzip') > -1)
+                    bf = (0, zlib_1.gunzipSync)(buffer);
+                resStr = bf.toString('utf-8');
+                try {
+                    var obj = JSON.parse(resStr);
+                    _this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u54CD\u5E94:\r\n") +
+                        JSON.stringify(obj, void 0, parseJSON ? '\t' : void 0));
+                }
+                catch (e) {
+                    console.log('对方返回了非json格式数据~'.red.bold);
+                    _this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u54CD\u5E94:\r\n") +
+                        buffer);
+                }
+            });
+        })
+            .end()
+            .on('error', function (e) {
+            _this.log.error(e);
+            res.end(JSON.stringify(e));
+        });
+    };
     Server.prototype.createServer = function () {
-        var proxy = this.config.proxy;
+        var _a = this.config, proxy = _a.proxy, server = _a.server;
+        var hp = http_1.default;
+        var args = [];
+        if (server && server.indexOf('https') > -1) {
+            var options = {
+                key: fs_1.default.readFileSync(path_1.default.resolve(process.cwd(), 'cert/server.key')),
+                cert: fs_1.default.readFileSync(path_1.default.resolve(process.cwd(), 'cert/server.crt')),
+            };
+            args.push(options);
+            process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+            hp = https_1.default;
+        }
         if (!proxy) {
             this.setMocks();
-            this.createLocalServer();
+            args.push(this.handleLocalServerRequest.bind(this));
+            this.server = hp.createServer.apply(hp, args);
             return;
         }
         else {
-            this.createProxyServer();
+            args.push(this.handleProxyServerRequest.bind(this));
+            this.server = hp.createServer.apply(hp, args);
         }
     };
-    Server.prototype.createLocalServer = function () {
-        this.server = http_1.default.createServer(this.handleLocalServerRequest);
-    };
-    Server.prototype.createProxyServer = function () {
-        this.server = http_1.default.createServer(this.handleProxyServerRequest);
+    Server.prototype.startServer = function () {
+        var _this = this;
+        var _a = this.config, _b = _a.server, server = _b === void 0 ? DEFAULT_SERVER : _b, proxy = _a.proxy;
+        var arr = server.split(':');
+        if (!arr[0])
+            return;
+        var port = arr[2] ? +arr[2] : arr[1] ? +arr[1] : 80;
+        this.server.listen(port, function () {
+            if (!proxy) {
+                var mocksCount = Object.keys(_this.mocks).length;
+                console.log('='.repeat(5).rainbow.bold.toString() +
+                    '本地模式已启动'.green.bold +
+                    "{ proxy => ".concat(server, " } { \u63A5\u53E3\u6570\u91CF:").concat(mocksCount, " }").yellow +
+                    '='.repeat(5).rainbow.bold);
+                return;
+            }
+            else {
+                console.log('='.repeat(5).rainbow.bold.toString() +
+                    "\u4EE3\u7406\u6A21\u5F0F\u5DF2\u542F\u52A8".green.bold +
+                    '='.repeat(5).rainbow.bold);
+                Object.keys(proxy).forEach(function (k) {
+                    console.log("{ ".concat(k, " => ").concat(proxy[k].target, " }").yellow);
+                });
+            }
+        });
+        this.server.on('error', function (e) {
+            console.error(e);
+            process.exit(0);
+        });
+        process.on('SIGTERM', function () { return _this.server.close(function () { return process.exit(0); }); });
     };
     return Server;
 }());
-new Server();
-process.on('SIGKILL', function () {
+try {
+    new Server();
+}
+catch (e) {
+    console.error(e);
     process.exit(0);
-});
+}

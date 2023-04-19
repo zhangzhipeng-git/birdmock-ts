@@ -13,7 +13,7 @@ var CONFIG = {
             backups: 10,
             maxLogSize: 5242880,
             alwaysIncludePattern: true,
-            pattern: 'yyyy-MM-dd_HH-mm-ss.SSS.log',
+            pattern: 'yyyy-MM-dd.log',
         },
     },
     categories: {
@@ -29,7 +29,7 @@ function getLogger(logsPath) {
     appenderKeys.forEach(function (key) {
         if (appenders[key].type === 'stdout')
             return;
-        appenders[key].filename = logsPath + '/';
+        appenders[key].filename = logsPath + '/mock';
     });
     log4js_1.default.configure(CONFIG);
     return log4js_1.default.getLogger();
