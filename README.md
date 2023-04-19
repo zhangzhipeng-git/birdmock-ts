@@ -103,9 +103,18 @@ module.exports = {
 
 ```js
 module.exports = {
-  // 键值可以是函数也可以是对象
+  // 通配符匹配接口
+  '/api/*': () => {
+    return {
+      status: 200,
+      data: {
+        mock: 'birdmock',
+      },
+    };
+  },
+  // 根据参数返回不同数据
   '/example': params => {
-    if (params.id === '1') {
+    if (params.id === 1) {
       return {
         status: 200,
         data: {
@@ -120,6 +129,31 @@ module.exports = {
         },
       };
     }
+  },
+  // 请求静态资源，带.xxx后缀
+  '/static/elyra/r-logo.svg': () => {
+    return fs.readFileSync(resolve('./assets/r-logo.svg'));
+  },
+  // 请求静态资源，不带.xxx后缀
+  '/elyra/pipeline/export': () => {
+    return {
+      filename: 'python.svg',
+      buffer: fs.readFileSync(resolve('./assets/python.svg')),
+    };
+  },
+  // 上传文件
+  '/upload/file': files => {
+    console.log(files, '参数');
+    const fileArr = files.file; // file 为formData的字段名
+    const paths = [];
+    fileArr.forEach(f => {
+      const path = f.path;
+      paths.push(path);
+    });
+
+    return {
+      paths,
+    };
   },
 };
 ```

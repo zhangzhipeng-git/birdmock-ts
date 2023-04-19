@@ -221,7 +221,7 @@ class Server {
   }
 
   /**
-   * 获取接口地址，去掉协议、域名/ip和端口
+   * 获取接口地址，去掉后面的查询参数
    * @param {http.IncomingMessage} req 请求体
    */
   getApi(req: http.IncomingMessage) {

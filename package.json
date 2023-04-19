@@ -1,6 +1,6 @@
 {
   "name": "@bigbigbird/mock",
-  "version": "5.0.1",
+  "version": "5.0.2",
   "description": "前端mock调试",
   "main": "dist/index.js",
   "bin": {
