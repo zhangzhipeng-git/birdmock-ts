@@ -36,17 +36,64 @@ var util_1 = require("./util");
 var buffer_1 = require("buffer");
 var multiparty_1 = __importDefault(require("multiparty"));
 var _1 = require(".");
-var RequestEnum;
-(function (RequestEnum) {
-    RequestEnum["POST"] = "POST";
-    RequestEnum["PUT"] = "PUT";
-    RequestEnum["GET"] = "GET";
-    RequestEnum["DELETE"] = "DELETE";
-    RequestEnum["OPTIONS"] = "OPTIONS";
-})(RequestEnum || (RequestEnum = {}));
+var CodeEnum;
+(function (CodeEnum) {
+    CodeEnum[CodeEnum["CODE_404"] = 404] = "CODE_404";
+    CodeEnum[CodeEnum["CODE_500"] = 500] = "CODE_500";
+})(CodeEnum || (CodeEnum = {}));
+var ErrorEnum;
+(function (ErrorEnum) {
+    ErrorEnum["ERROR_404"] = "\u627E\u4E0D\u5230\u8BF7\u6C42\u7684\u8D44\u6E90";
+    ErrorEnum["ERROR_500"] = "\u8BF7\u6C42\u9519\u8BEF";
+    ErrorEnum["MOCK_REGISTER"] = "mock \u6587\u4EF6\u6CE8\u518C\u5931\u8D25";
+    ErrorEnum["UPLOAD"] = "\u6587\u4EF6\u4E0A\u4F20\u9519\u8BEF";
+})(ErrorEnum || (ErrorEnum = {}));
+var RequestMethodEnum;
+(function (RequestMethodEnum) {
+    RequestMethodEnum["POST"] = "POST";
+    RequestMethodEnum["PUT"] = "PUT";
+    RequestMethodEnum["GET"] = "GET";
+    RequestMethodEnum["DELETE"] = "DELETE";
+    RequestMethodEnum["OPTIONS"] = "OPTIONS";
+})(RequestMethodEnum || (RequestMethodEnum = {}));
+var RequestTypeEnum;
+(function (RequestTypeEnum) {
+    RequestTypeEnum["GENERIC"] = "generic";
+    RequestTypeEnum["UPLOAD"] = "upload";
+    RequestTypeEnum["JSON"] = "json";
+    RequestTypeEnum["XML"] = "xml";
+})(RequestTypeEnum || (RequestTypeEnum = {}));
+var RequestMimeEnum;
+(function (RequestMimeEnum) {
+    RequestMimeEnum["generic"] = "application/x-www-form-urlencoded";
+    RequestMimeEnum["upload"] = "multipart/form-data";
+    RequestMimeEnum["json"] = "application/json";
+    RequestMimeEnum["xml"] = "text/xml";
+})(RequestMimeEnum || (RequestMimeEnum = {}));
+var ResponseMimeEnum;
+(function (ResponseMimeEnum) {
+    ResponseMimeEnum[".svg"] = "image/svg+xml";
+    ResponseMimeEnum[".jpg"] = "image/jpeg";
+    ResponseMimeEnum[".jpeg"] = "image/jpeg";
+    ResponseMimeEnum[".png"] = "image/png";
+    ResponseMimeEnum[".gif"] = "image/gif";
+    ResponseMimeEnum[".wav"] = "audio/wav";
+    ResponseMimeEnum[".txt"] = "text/plain;charset=utf-8";
+    ResponseMimeEnum[".css"] = "text/css;charset=utf-8";
+    ResponseMimeEnum[".html"] = "text/html;charset=utf-8";
+    ResponseMimeEnum[".js"] = "application/javascript;charset=utf-8";
+    ResponseMimeEnum[".json"] = "application/json;charset=utf-8";
+    ResponseMimeEnum["DEFAULT"] = "application/octet-stream";
+})(ResponseMimeEnum || (ResponseMimeEnum = {}));
+var CORSEnum;
+(function (CORSEnum) {
+    CORSEnum["ORIGIN"] = "Access-Control-Allow-Origin";
+    CORSEnum["HEADERS"] = "Access-Control-Allow-Headers";
+    CORSEnum["METHODS"] = "Access-Control-Allow-Methods";
+    CORSEnum["CREDENTIALS"] = "Access-Control-Allow-Credentials";
+})(CORSEnum || (CORSEnum = {}));
 var LOCAL_REG = /localhost|127\.0\.0\.1/;
 var DEFAULT_SERVER = 'localhost:4201';
-var NOT_FOND = { code: 404, msg: '未找到注册的接口' };
 var Server = (function () {
     function Server() {
         this.rootPath = '';
@@ -148,7 +195,7 @@ var Server = (function () {
                 Object.assign(mocks, mock);
             }
             catch (e) {
-                console.log("".concat('文件'.yellow).concat('['.green).concat(file.red).concat(']'.green).concat('注册mock失败'.yellow, "\r\n\u539F\u56E0\r\n").concat(e));
+                console.log("".concat(ErrorEnum.MOCK_REGISTER, "\uFF1A\r\n").concat(e));
             }
         });
         this.mocks = mocks;
@@ -158,19 +205,7 @@ var Server = (function () {
         this.log = (0, log_1.getLogger)(logsPath);
     };
     Server.prototype.expectRequestType = function (req, type) {
-        var contentType;
-        switch (type) {
-            case 'generic':
-                contentType = 'application/x-www-form-urlencoded';
-                break;
-            case 'upload':
-                contentType = 'multipart/form-data';
-                break;
-            case 'json':
-                contentType = 'application/json';
-                break;
-        }
-        return req.headers['content-type'].indexOf(contentType) > -1;
+        return ((req.headers['content-type'] || '').indexOf(RequestMimeEnum[type]) > -1);
     };
     Server.prototype.getApi = function (req) {
         var _a, _b;
@@ -193,10 +228,10 @@ var Server = (function () {
         var cors = this.config.cors;
         if (!cors)
             return;
-        res.setHeader('Access-Control-Allow-Origin', cors.origin || '*');
-        res.setHeader('Access-Control-Allow-Headers', cors.headers || '*');
-        res.setHeader('Access-Control-Allow-Methods', cors.methods || '*');
-        res.setHeader('Access-Control-Allow-Credentials', (cors.credentials || true) + '');
+        res.setHeader(CORSEnum.ORIGIN, cors.origin || '*');
+        res.setHeader(CORSEnum.HEADERS, cors.headers || '*');
+        res.setHeader(CORSEnum.METHODS, cors.methods || '*');
+        res.setHeader(CORSEnum.CREDENTIALS, (cors.credentials || true) + '');
     };
     Server.prototype.handleLocalServerRequest = function (req, res) {
         var _this = this;
@@ -207,9 +242,9 @@ var Server = (function () {
         });
         var params, rawData = '', method = req.method;
         switch (method) {
-            case RequestEnum.POST:
-            case RequestEnum.PUT:
-                if (this.expectRequestType(req, 'upload')) {
+            case RequestMethodEnum.POST:
+            case RequestMethodEnum.PUT:
+                if (this.expectRequestType(req, RequestTypeEnum.UPLOAD)) {
                     this.handleLocalUpload(req, res, params);
                     return;
                 }
@@ -218,17 +253,17 @@ var Server = (function () {
                     rawData += chunk;
                 });
                 req.on('end', function () {
-                    if (_this.expectRequestType(req, 'json'))
-                        params = JSON.parse(rawData);
-                    else if (_this.expectRequestType(req, 'generic'))
+                    if (_this.expectRequestType(req, RequestTypeEnum.GENERIC))
                         params = querystring_1.default.parse(rawData);
+                    else if (_this.expectRequestType(req, RequestTypeEnum.JSON))
+                        params = JSON.parse(rawData);
                     else
                         params = rawData;
                 });
                 break;
-            case RequestEnum.GET:
-            case RequestEnum.DELETE:
-            case RequestEnum.OPTIONS:
+            case RequestMethodEnum.GET:
+            case RequestMethodEnum.DELETE:
+            case RequestMethodEnum.OPTIONS:
             default:
                 params = querystring_1.default.parse((_b = (_a = req.url) === null || _a === void 0 ? void 0 : _a.split('?')[1]) !== null && _b !== void 0 ? _b : '');
                 break;
@@ -237,70 +272,75 @@ var Server = (function () {
     };
     Server.prototype.handleProxyServerRequest = function (req, res) {
         var _this = this;
-        var _a;
         req.on('error', function (e) {
             _this.log.error(e);
             res.end(JSON.stringify(e));
         });
-        var proxy = this.config.proxy;
+        var _a = this.config, proxy = _a.proxy, server = _a.server;
         if (!proxy)
             return;
-        var api = this.getApi(req);
-        var apiKeys = Object.keys(proxy);
-        var apiKey = apiKeys.find(function (k) {
-            return new RegExp(k).test(api);
+        new Promise(function (resolve) {
+            var params, rawData = '';
+            switch (req.method) {
+                case RequestMethodEnum.POST:
+                case RequestMethodEnum.PUT:
+                    req.on('data', function (chunk) {
+                        rawData += chunk;
+                    });
+                    req.on('end', function () {
+                        if (_this.expectRequestType(req, RequestTypeEnum.GENERIC))
+                            params = querystring_1.default.parse(rawData);
+                        else if (_this.expectRequestType(req, RequestTypeEnum.JSON))
+                            params = JSON.parse(rawData);
+                        else
+                            params = rawData;
+                        resolve(params);
+                    });
+                    return;
+                case RequestMethodEnum.GET:
+                case RequestMethodEnum.DELETE:
+                case RequestMethodEnum.OPTIONS:
+                default:
+                    params = querystring_1.default.parse(req.url.split('?')[1]);
+                    resolve(params);
+                    return;
+            }
+        }).then(function (params) {
+            var _a;
+            var api = _this.getApi(req);
+            var apiKeys = Object.keys(proxy);
+            var apiKey = apiKeys.find(function (k) {
+                return new RegExp(k).test(api);
+            });
+            if (!apiKey) {
+                if (_this.isProxy2Server(req.headers.host || '', server))
+                    return _this.forward2self(req, res, params);
+                res.statusCode = CodeEnum.CODE_404;
+                res.setHeader('content-type', ResponseMimeEnum['.json']);
+                res.end(JSON.stringify(ErrorEnum.ERROR_404));
+                return;
+            }
+            var _b = proxy[apiKey], changeOrigin = _b.changeOrigin, rewrite = _b.rewrite, target = _b.target;
+            var arr = target.split(':');
+            var protocol = arr[0];
+            var hostname = arr[1].substring(2, arr[1].length);
+            var method = req.method;
+            var port = arr[2] ? +arr[2] : 80;
+            if (changeOrigin)
+                req.headers.host = "".concat(hostname).concat(port != 80 ? ':' + port : '');
+            if (!req.headers['content-type'])
+                req.headers['content-type'] = RequestMimeEnum.generic;
+            var options = {
+                headers: req.headers,
+                protocol: "".concat(protocol, ":"),
+                port: port,
+                hostname: hostname,
+                path: rewrite ? rewrite((_a = req.url) !== null && _a !== void 0 ? _a : '') : req.url,
+                method: method,
+            };
+            var httpX = arr[0] === 'https' ? https_1.default : http_1.default;
+            _this.proxyServerResponse(req, res, params, httpX, options);
         });
-        if (!apiKey) {
-            res.statusCode = 404;
-            res.setHeader('content-type', 'application/json;charset=utf-8');
-            res.end(JSON.stringify(NOT_FOND));
-            return;
-        }
-        var _b = proxy[apiKey], changeOrigin = _b.changeOrigin, rewrite = _b.rewrite, target = _b.target;
-        var arr = target.split(':');
-        var protocol = arr[0];
-        var hostname = arr[1].substring(2, arr[1].length);
-        var method = req.method;
-        var port = arr[2] ? +arr[2] : 80;
-        if (changeOrigin)
-            req.headers.host = "".concat(hostname).concat(port != 80 ? ':' + port : '');
-        if (!req.headers['content-type'])
-            req.headers['content-type'] =
-                'application/x-www-form-urlencoded;charset=UTF-8';
-        var options = {
-            headers: req.headers,
-            protocol: "".concat(protocol, ":"),
-            port: port,
-            hostname: hostname,
-            path: rewrite ? rewrite((_a = req.url) !== null && _a !== void 0 ? _a : '') : req.url,
-            method: method,
-        };
-        var httpX = arr[0] === 'https' ? https_1.default : http_1.default;
-        var params, rawData = '';
-        switch (method) {
-            case RequestEnum.POST:
-            case RequestEnum.PUT:
-                req.on('data', function (chunk) {
-                    rawData += chunk;
-                });
-                req.on('end', function () {
-                    if (_this.expectRequestType(req, 'json'))
-                        params = JSON.parse(rawData);
-                    else if (_this.expectRequestType(req, 'generic'))
-                        params = querystring_1.default.parse(rawData);
-                    else
-                        params = rawData;
-                    _this.proxyServerResponse(req, res, params, httpX, options);
-                });
-                return;
-            case RequestEnum.GET:
-            case RequestEnum.DELETE:
-            case RequestEnum.OPTIONS:
-            default:
-                params = querystring_1.default.parse(req.url.split('?')[1]);
-                this.proxyServerResponse(req, res, params, httpX, options);
-                return;
-        }
     };
     Server.prototype.handleLocalUpload = function (req, res, params) {
         var _this = this;
@@ -309,7 +349,7 @@ var Server = (function () {
         });
         form.parse(req, function (err, fields, files) {
             if (err)
-                _this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u6587\u4EF6\u4E0A\u4F20\u9519\u8BEF:\r\n").concat(err));
+                _this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>").concat(ErrorEnum.UPLOAD, ":\r\n").concat(err));
             _this.localServerResponse(req, res, __assign(__assign({}, fields), files));
         });
     };
@@ -318,14 +358,14 @@ var Server = (function () {
         var parseJSON = this.config.parseJSON;
         this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u8BF7\u6C42\u53C2\u6570:\r\n").concat(JSON.stringify(params, undefined, parseJSON ? '\t' : undefined)));
         this.enableCORS(res);
-        if (req.method === RequestEnum.OPTIONS)
+        if (req.method === RequestMethodEnum.OPTIONS)
             return res.end();
         var api = this.getApi(req);
         var key = this.getMatchKey(Object.keys(this.mocks), api);
         if (!key) {
-            res.statusCode = 404;
-            res.setHeader('content-type', 'application/json;charset=utf-8');
-            res.end(JSON.stringify(NOT_FOND));
+            res.statusCode = CodeEnum.CODE_404;
+            res.setHeader('content-type', ResponseMimeEnum['.json']);
+            res.end(JSON.stringify(ErrorEnum.ERROR_404));
             return;
         }
         var value = this.mocks[key];
@@ -339,31 +379,20 @@ var Server = (function () {
             var isFile = true;
             var match = key.match(/\.(?:svg|jpg|jpeg|png|gif|wav|txt|css|html|js)/);
             if (match) {
-                var CT = {
-                    '.svg': 'image/svg+xml',
-                    '.jpg': 'image/jpeg',
-                    '.jpeg': 'image/jpeg',
-                    '.png': 'image/png',
-                    '.gif': 'image/gif',
-                    '.wav': 'audio/wav',
-                    '.txt': 'text/plain;charset=utf-8',
-                    '.css': 'text/css;charset=utf-8',
-                    '.html': 'text/html;charset=utf-8',
-                    '.js': 'application/javascript',
-                };
-                res.setHeader('Content-type', CT[match[0]]);
+                var k = match[0];
+                res.setHeader('Content-type', ResponseMimeEnum[k]);
                 res.end(value);
             }
             else if (value && value.buffer && value.buffer instanceof buffer_1.Buffer) {
                 res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
                 res.setHeader('Content-Disposition', "attachment;filename=".concat(value.filename));
-                res.setHeader('Content-type', value['Content-Type'] || 'application/octet-stream');
+                res.setHeader('Content-type', value['Content-Type'] || ResponseMimeEnum.DEFAULT);
                 res.end(value.buffer);
             }
             else {
                 isFile = false;
                 value = mockjs_1.default.mock(value);
-                res.setHeader('Content-Type', 'application/json;charset=utf-8');
+                res.setHeader('Content-Type', ResponseMimeEnum['.json']);
                 res.end(JSON.stringify(value));
             }
             _this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u54CD\u5E94:\r\n") +
@@ -372,17 +401,21 @@ var Server = (function () {
                     : JSON.stringify(value, undefined, parseJSON ? '\t' : undefined)));
         }, (value && value.timeout) || 0);
     };
+    Server.prototype.forward2self = function (req, res, params) {
+        this.setMocks();
+        if (this.expectRequestType(req, RequestTypeEnum.UPLOAD)) {
+            this.handleLocalUpload(req, res, params);
+            return;
+        }
+        this.localServerResponse(req, res, params);
+    };
     Server.prototype.proxyServerResponse = function (req, res, params, httpX, options) {
         var _this = this;
         var _a = this.config, parseJSON = _a.parseJSON, server = _a.server;
-        if (this.isProxy2Server(req.headers.host || '', server)) {
-            this.setMocks();
-            this.localServerResponse(req, res, params);
-            return;
-        }
+        if (this.isProxy2Server(req.headers.host || '', server))
+            return this.forward2self(req, res, params);
         this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u8BF7\u6C42\u53C2\u6570:\r\n").concat(JSON.stringify(params, undefined, parseJSON ? '\t' : undefined)));
-        httpX
-            .request(options, function (res_) {
+        var req_ = httpX.request(options, function (res_) {
             var buffer = [];
             res_.on('data', function (chunk) {
                 buffer.push(chunk);
@@ -409,9 +442,9 @@ var Server = (function () {
                         buffer);
                 }
             });
-        })
-            .end()
-            .on('error', function (e) {
+        });
+        req_.write(params);
+        req_.end().on('error', function (e) {
             _this.log.error(e);
             res.end(JSON.stringify(e));
         });

@@ -24,7 +24,19 @@ import { Buffer } from 'buffer';
 import multiparty from 'multiparty'; // 文件上传解析模块
 import { DEFAULT_ROOT_PATH, UPLOAD_DIR } from '.';
 
-enum RequestEnum {
+enum CodeEnum {
+  CODE_404 = 404,
+  CODE_500 = 500,
+}
+
+enum ErrorEnum {
+  ERROR_404 = `找不到请求的资源`,
+  ERROR_500 = `请求错误`,
+  MOCK_REGISTER = `mock 文件注册失败`,
+  UPLOAD = '文件上传错误',
+}
+
+enum RequestMethodEnum {
   POST = 'POST',
   PUT = 'PUT',
   GET = 'GET',
@@ -32,9 +44,57 @@ enum RequestEnum {
   OPTIONS = 'OPTIONS',
 }
 
+enum RequestTypeEnum {
+  GENERIC = 'generic',
+  UPLOAD = 'upload',
+  JSON = 'json',
+  XML = 'xml',
+}
+
+enum RequestMimeEnum {
+  'generic' = 'application/x-www-form-urlencoded',
+  'upload' = 'multipart/form-data',
+  'json' = 'application/json',
+  'xml' = 'text/xml',
+}
+
+enum ResponseMimeEnum {
+  '.svg' = 'image/svg+xml',
+  '.jpg' = 'image/jpeg',
+  '.jpeg' = 'image/jpeg',
+  '.png' = 'image/png',
+  '.gif' = 'image/gif',
+  '.wav' = 'audio/wav',
+  '.txt' = 'text/plain;charset=utf-8',
+  '.css' = 'text/css;charset=utf-8',
+  '.html' = 'text/html;charset=utf-8',
+  '.js' = 'application/javascript;charset=utf-8',
+  '.json' = 'application/json;charset=utf-8',
+  DEFAULT = 'application/octet-stream',
+}
+
+enum CORSEnum {
+  ORIGIN = 'Access-Control-Allow-Origin',
+  HEADERS = 'Access-Control-Allow-Headers',
+  METHODS = 'Access-Control-Allow-Methods',
+  CREDENTIALS = 'Access-Control-Allow-Credentials',
+}
+
 const LOCAL_REG = /localhost|127\.0\.0\.1/;
 const DEFAULT_SERVER = 'localhost:4201';
-const NOT_FOND = { code: 404, msg: '未找到注册的接口' };
+declare type RequestType = 'generic' | 'upload' | 'json' | 'xml';
+declare type ResponseType =
+  | '.svg'
+  | '.jpg'
+  | '.jpeg'
+  | '.png'
+  | '.gif'
+  | '.wav'
+  | '.txt'
+  | '.css'
+  | '.html'
+  | '.js'
+  | '.json';
 
 class Server {
   /** 服务器 */
@@ -182,11 +242,7 @@ class Server {
         const mock = require(file);
         Object.assign(mocks, mock);
       } catch (e) {
-        console.log(
-          `${'文件'.yellow}${'['.green}${file.red}${']'.green}${
-            '注册mock失败'.yellow
-          }\r\n原因\r\n${e}`
-        );
+        console.log(`${ErrorEnum.MOCK_REGISTER}：\r\n${e}`);
       }
     });
     this.mocks = mocks;
@@ -198,26 +254,14 @@ class Server {
     const logsPath = this.getPaths()[2];
     this.log = getLogger(logsPath);
   }
+
   /**
    * 预期请求类型
    */
-  expectRequestType(
-    req: http.IncomingMessage,
-    type: 'json' | 'upload' | 'generic'
-  ) {
-    let contentType;
-    switch (type) {
-      case 'generic':
-        contentType = 'application/x-www-form-urlencoded';
-        break;
-      case 'upload':
-        contentType = 'multipart/form-data';
-        break;
-      case 'json':
-        contentType = 'application/json';
-        break;
-    }
-    return req.headers['content-type']!.indexOf(contentType) > -1;
+  expectRequestType(req: http.IncomingMessage, type: RequestType) {
+    return (
+      (req.headers['content-type'] || '').indexOf(RequestMimeEnum[type]) > -1
+    );
   }
 
   /**
@@ -256,13 +300,11 @@ class Server {
   enableCORS(res: http.ServerResponse) {
     const { cors } = this.config;
     if (!cors) return;
-    res.setHeader('Access-Control-Allow-Origin', cors.origin || '*');
-    res.setHeader('Access-Control-Allow-Headers', cors.headers || '*');
-    res.setHeader('Access-Control-Allow-Methods', cors.methods || '*');
-    res.setHeader(
-      'Access-Control-Allow-Credentials',
-      (cors.credentials || true) + ''
-    );
+
+    res.setHeader(CORSEnum.ORIGIN, cors.origin || '*');
+    res.setHeader(CORSEnum.HEADERS, cors.headers || '*');
+    res.setHeader(CORSEnum.METHODS, cors.methods || '*');
+    res.setHeader(CORSEnum.CREDENTIALS, (cors.credentials || true) + '');
   }
 
   /**
@@ -283,9 +325,9 @@ class Server {
       rawData = '',
       method = req.method;
     switch (method) {
-      case RequestEnum.POST:
-      case RequestEnum.PUT:
-        if (this.expectRequestType(req, 'upload')) {
+      case RequestMethodEnum.POST:
+      case RequestMethodEnum.PUT:
+        if (this.expectRequestType(req, RequestTypeEnum.UPLOAD)) {
           this.handleLocalUpload(req, res, params);
           return;
         }
@@ -294,15 +336,16 @@ class Server {
           rawData += chunk;
         });
         req.on('end', () => {
-          if (this.expectRequestType(req, 'json')) params = JSON.parse(rawData);
-          else if (this.expectRequestType(req, 'generic'))
+          if (this.expectRequestType(req, RequestTypeEnum.GENERIC))
             params = qs.parse(rawData);
+          else if (this.expectRequestType(req, RequestTypeEnum.JSON))
+            params = JSON.parse(rawData);
           else params = rawData;
         });
         break;
-      case RequestEnum.GET:
-      case RequestEnum.DELETE:
-      case RequestEnum.OPTIONS:
+      case RequestMethodEnum.GET:
+      case RequestMethodEnum.DELETE:
+      case RequestMethodEnum.OPTIONS:
       default:
         params = qs.parse(req.url?.split('?')[1] ?? '');
         break;
@@ -324,71 +367,78 @@ class Server {
       res.end(JSON.stringify(e));
     });
 
-    const { proxy } = this.config;
+    const { proxy, server } = this.config;
     if (!proxy) return;
 
-    const api = this.getApi(req);
-    // 检测是否匹配到proxy配置
-    const apiKeys = Object.keys(proxy);
-    const apiKey = apiKeys.find((k: string) => {
-      return new RegExp(k).test(api);
+    new Promise(resolve => {
+      let params,
+        rawData = '';
+      switch (req.method) {
+        case RequestMethodEnum.POST:
+        case RequestMethodEnum.PUT:
+          req.on('data', chunk => {
+            rawData += chunk;
+          });
+          req.on('end', () => {
+            if (this.expectRequestType(req, RequestTypeEnum.GENERIC))
+              params = qs.parse(rawData);
+            else if (this.expectRequestType(req, RequestTypeEnum.JSON))
+              params = JSON.parse(rawData);
+            else params = rawData;
+            resolve(params);
+          });
+          return;
+        case RequestMethodEnum.GET:
+        case RequestMethodEnum.DELETE:
+        case RequestMethodEnum.OPTIONS:
+        default:
+          params = qs.parse(req.url!.split('?')[1]);
+          resolve(params);
+          return;
+      }
+    }).then(params => {
+      const api = this.getApi(req);
+      // 检测是否匹配到proxy配置
+      const apiKeys = Object.keys(proxy);
+      const apiKey = apiKeys.find((k: string) => {
+        return new RegExp(k).test(api);
+      });
+
+      if (!apiKey) {
+        if (this.isProxy2Server(req.headers.host || '', server))
+          return this.forward2self(req, res, params);
+
+        res.statusCode = CodeEnum.CODE_404;
+        res.setHeader('content-type', ResponseMimeEnum['.json']);
+        res.end(JSON.stringify(ErrorEnum.ERROR_404));
+        return;
+      }
+
+      const { changeOrigin, rewrite, target } = proxy[apiKey];
+      const arr = target.split(':');
+      // 默认http协议
+      const protocol = arr[0];
+      const hostname = arr[1].substring(2, arr[1].length);
+      const method = req.method;
+      const port = arr[2] ? +arr[2] : 80;
+
+      if (changeOrigin)
+        req.headers.host = `${hostname}${port != 80 ? ':' + port : ''}`;
+      if (!req.headers['content-type'])
+        req.headers['content-type'] = RequestMimeEnum.generic;
+
+      const options = {
+        headers: req.headers,
+        protocol: `${protocol}:`,
+        port,
+        hostname,
+        path: rewrite ? rewrite(req.url ?? '') : req.url,
+        method,
+      };
+
+      const httpX = arr[0] === 'https' ? https : http;
+      this.proxyServerResponse(req, res, params, httpX, options);
     });
-    if (!apiKey) {
-      res.statusCode = 404;
-      res.setHeader('content-type', 'application/json;charset=utf-8');
-      res.end(JSON.stringify(NOT_FOND));
-      return;
-    }
-
-    const { changeOrigin, rewrite, target } = proxy[apiKey];
-    const arr = target.split(':');
-    // 默认http协议
-    const protocol = arr[0];
-    const hostname = arr[1].substring(2, arr[1].length);
-    const method = req.method;
-    const port = arr[2] ? +arr[2] : 80;
-
-    if (changeOrigin)
-      req.headers.host = `${hostname}${port != 80 ? ':' + port : ''}`;
-    if (!req.headers['content-type'])
-      req.headers['content-type'] =
-        'application/x-www-form-urlencoded;charset=UTF-8';
-
-    const options = {
-      headers: req.headers,
-      protocol: `${protocol}:`,
-      port,
-      hostname,
-      path: rewrite ? rewrite(req.url ?? '') : req.url,
-      method,
-    };
-
-    const httpX = arr[0] === 'https' ? https : http;
-
-    let params,
-      rawData = '';
-    switch (method) {
-      case RequestEnum.POST:
-      case RequestEnum.PUT:
-        req.on('data', chunk => {
-          rawData += chunk;
-        });
-        req.on('end', () => {
-          if (this.expectRequestType(req, 'json')) params = JSON.parse(rawData);
-          else if (this.expectRequestType(req, 'generic'))
-            params = qs.parse(rawData);
-          else params = rawData;
-          this.proxyServerResponse(req, res, params, httpX, options);
-        });
-        return;
-      case RequestEnum.GET:
-      case RequestEnum.DELETE:
-      case RequestEnum.OPTIONS:
-      default:
-        params = qs.parse(req.url!.split('?')[1]);
-        this.proxyServerResponse(req, res, params, httpX, options);
-        return;
-    }
   }
 
   /**
@@ -408,7 +458,7 @@ class Server {
     form.parse(req, (err: string, fields: string[], files: any[]) => {
       if (err)
         this.log.info(
-          `[${req.headers['host']}] [${req.url}]${req.method}=>文件上传错误:\r\n${err}`
+          `[${req.headers['host']}] [${req.url}]${req.method}=>${ErrorEnum.UPLOAD}:\r\n${err}`
         );
 
       this.localServerResponse(req, res, { ...fields, ...files });
@@ -439,15 +489,15 @@ class Server {
     );
 
     this.enableCORS(res);
-    if (req.method === RequestEnum.OPTIONS) return res.end();
+    if (req.method === RequestMethodEnum.OPTIONS) return res.end();
     const api = this.getApi(req);
     const key = this.getMatchKey(Object.keys(this.mocks), api);
 
     // 未找到注册的接口
     if (!key) {
-      res.statusCode = 404;
-      res.setHeader('content-type', 'application/json;charset=utf-8');
-      res.end(JSON.stringify(NOT_FOND));
+      res.statusCode = CodeEnum.CODE_404;
+      res.setHeader('content-type', ResponseMimeEnum['.json']);
+      res.end(JSON.stringify(ErrorEnum.ERROR_404));
       return;
     }
 
@@ -465,19 +515,8 @@ class Server {
       const match = key.match(/\.(?:svg|jpg|jpeg|png|gif|wav|txt|css|html|js)/);
       if (match) {
         // 根据接口地址后缀来匹配，模拟返回文件流，如：http://localhost:4201/api/xxx.jpg
-        const CT: any = {
-          '.svg': 'image/svg+xml',
-          '.jpg': 'image/jpeg',
-          '.jpeg': 'image/jpeg',
-          '.png': 'image/png',
-          '.gif': 'image/gif',
-          '.wav': 'audio/wav',
-          '.txt': 'text/plain;charset=utf-8',
-          '.css': 'text/css;charset=utf-8',
-          '.html': 'text/html;charset=utf-8',
-          '.js': 'application/javascript',
-        };
-        res.setHeader('Content-type', CT[match[0]]);
+        const k = match[0] as ResponseType;
+        res.setHeader('Content-type', ResponseMimeEnum[k]);
         res.end(value); // buffer
       } else if (value && value.buffer && value.buffer instanceof Buffer) {
         // 固定格式：{filename: xxx, buffer: xxx, 'Content-Type': xxx}，模拟返回文件流
@@ -488,14 +527,14 @@ class Server {
         );
         res.setHeader(
           'Content-type',
-          value['Content-Type'] || 'application/octet-stream'
+          value['Content-Type'] || ResponseMimeEnum.DEFAULT
         );
         res.end(value.buffer); // buffer
       } else {
         // json 格式返回
         isFile = false;
         value = Mock.mock(value);
-        res.setHeader('Content-Type', 'application/json;charset=utf-8');
+        res.setHeader('Content-Type', ResponseMimeEnum['.json']);
         res.end(JSON.stringify(value)); // string
       }
 
@@ -506,6 +545,19 @@ class Server {
             : JSON.stringify(value, undefined, parseJSON ? '\t' : undefined))
       );
     }, (value && value.timeout) || 0);
+  }
+
+  forward2self(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    params: any
+  ) {
+    this.setMocks();
+    if (this.expectRequestType(req, RequestTypeEnum.UPLOAD)) {
+      this.handleLocalUpload(req, res, params);
+      return;
+    }
+    this.localServerResponse(req, res, params);
   }
 
   /**
@@ -525,11 +577,9 @@ class Server {
   ) {
     const { parseJSON, server } = this.config;
 
-    if (this.isProxy2Server(req.headers.host || '', server)) {
-      this.setMocks();
-      this.localServerResponse(req, res, params);
-      return;
-    }
+    // 通过 server 服务代理到了 server 服务本身（不推荐这样做，多此一举...）
+    if (this.isProxy2Server(req.headers.host || '', server))
+      return this.forward2self(req, res, params);
 
     this.log.info(
       `[${req.headers['host']}] [${req.url}]${
@@ -541,49 +591,49 @@ class Server {
       )}`
     );
 
-    httpX
-      .request(options, (res_: http.IncomingMessage) => {
-        let buffer: any = [];
-        // 这里不设置字符编码，默认是Buffer对象（nodejs官网api有说明）
-        res_.on('data', function (chunk) {
-          buffer.push(chunk);
-        });
-        res_.on('end', () => {
-          buffer = Buffer.concat(buffer);
-          res.setHeader('Content-Type', res_.headers['Content-Type'] ?? '');
-          // CORS
-          this.enableCORS(res);
-          res.statusCode = res_.statusCode || res.statusCode;
-          res.end(buffer);
-
-          // 以下流程仅用于日志打印
-          let resStr,
-            bf = buffer;
-          // 如果是gzip压缩的，需要解压一下
-          if ((res_.headers['content-encoding'] || '').indexOf('gzip') > -1)
-            bf = gunzipSync(buffer);
-          resStr = bf.toString('utf-8');
-
-          try {
-            const obj = JSON.parse(resStr);
-            this.log.info(
-              `[${req.headers['host']}] [${req.url}]${req.method}=>响应:\r\n` +
-                JSON.stringify(obj, void 0, parseJSON ? '\t' : void 0)
-            );
-          } catch (e) {
-            console.log('对方返回了非json格式数据~'.red.bold);
-            this.log.info(
-              `[${req.headers['host']}] [${req.url}]${req.method}=>响应:\r\n` +
-                buffer
-            );
-          }
-        });
-      })
-      .end()
-      .on('error', (e: Error) => {
-        this.log.error(e);
-        res.end(JSON.stringify(e));
+    const req_ = httpX.request(options, (res_: http.IncomingMessage) => {
+      let buffer: any = [];
+      // 这里不设置字符编码，默认是Buffer对象（nodejs官网api有说明）
+      res_.on('data', function (chunk) {
+        buffer.push(chunk);
       });
+      res_.on('end', () => {
+        buffer = Buffer.concat(buffer);
+        res.setHeader('Content-Type', res_.headers['Content-Type'] ?? '');
+        // CORS
+        this.enableCORS(res);
+        res.statusCode = res_.statusCode || res.statusCode;
+        res.end(buffer);
+
+        // 以下流程仅用于日志打印
+        let resStr,
+          bf = buffer;
+        // 如果是gzip压缩的，需要解压一下
+        if ((res_.headers['content-encoding'] || '').indexOf('gzip') > -1)
+          bf = gunzipSync(buffer);
+        resStr = bf.toString('utf-8');
+
+        try {
+          const obj = JSON.parse(resStr);
+          this.log.info(
+            `[${req.headers['host']}] [${req.url}]${req.method}=>响应:\r\n` +
+              JSON.stringify(obj, void 0, parseJSON ? '\t' : void 0)
+          );
+        } catch (e) {
+          console.log('对方返回了非json格式数据~'.red.bold);
+          this.log.info(
+            `[${req.headers['host']}] [${req.url}]${req.method}=>响应:\r\n` +
+              buffer
+          );
+        }
+      });
+    });
+    // 设置请求体
+    req_.write(params);
+    req_.end().on('error', (e: Error) => {
+      this.log.error(e);
+      res.end(JSON.stringify(e));
+    });
   }
 
   createServer() {
