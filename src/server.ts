@@ -385,18 +385,19 @@ class Server {
             else if (this.expectRequestType(req, RequestTypeEnum.JSON))
               params = JSON.parse(rawData);
             else params = rawData;
-            resolve(params);
+            resolve({ params, rawData });
           });
           return;
         case RequestMethodEnum.GET:
         case RequestMethodEnum.DELETE:
         case RequestMethodEnum.OPTIONS:
         default:
-          params = qs.parse(req.url!.split('?')[1]);
-          resolve(params);
+          rawData = req.url?.split('?')[1] ?? '';
+          params = qs.parse(rawData);
+          resolve({ params, rawData });
           return;
       }
-    }).then(params => {
+    }).then(({ params, rawData }: any) => {
       const api = this.getApi(req);
       // 检测是否匹配到proxy配置
       const apiKeys = Object.keys(proxy);
@@ -437,7 +438,14 @@ class Server {
       };
 
       const httpX = arr[0] === 'https' ? https : http;
-      this.proxyServerResponse(req, res, params, httpX, options);
+      this.proxyServerResponse({
+        httpX,
+        options,
+        req,
+        res,
+        params,
+        rawData,
+      });
     });
   }
 
@@ -562,18 +570,22 @@ class Server {
 
   /**
    * 代理响应
-   * @param {http.IncomingMessage} req 请求
-   * @param {http.ServerResponse} res 响应
-   * @param {object} params 请求参数
-   * @param {http | https} httpX 协议
-   * @param {object} options 请求头
+   * @param {http | https} args.httpX 协议
+   * @param {object} args.options 请求选项配置
+   * @param {http.IncomingMessage} args.req 请求
+   * @param {http.ServerResponse} args.res 响应
+   * @param {object} args.params 请求参数（对象格式）
+   * @param {object} args.rawData 请求参数（原本格式）
    */
   proxyServerResponse(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    params: any,
-    httpX: any,
-    options: any
+    { httpX, options, req, res, params, rawData } = {} as {
+      httpX: any;
+      options: any;
+      req: http.IncomingMessage;
+      res: http.ServerResponse;
+      params: any;
+      rawData: any;
+    }
   ) {
     const { parseJSON, server } = this.config;
 
@@ -629,7 +641,7 @@ class Server {
       });
     });
     // 设置请求体
-    req_.write(params);
+    req_.write(rawData);
     req_.end().on('error', (e: Error) => {
       this.log.error(e);
       res.end(JSON.stringify(e));
@@ -654,12 +666,11 @@ class Server {
     if (!proxy) {
       this.setMocks();
       args.push(this.handleLocalServerRequest.bind(this));
-      this.server = hp.createServer(...args);
-      return;
     } else {
       args.push(this.handleProxyServerRequest.bind(this));
-      this.server = hp.createServer(...args);
     }
+
+    this.server = hp.createServer(...args);
   }
 
   /**

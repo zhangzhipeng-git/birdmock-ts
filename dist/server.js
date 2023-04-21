@@ -280,6 +280,7 @@ var Server = (function () {
         if (!proxy)
             return;
         new Promise(function (resolve) {
+            var _a, _b;
             var params, rawData = '';
             switch (req.method) {
                 case RequestMethodEnum.POST:
@@ -294,19 +295,21 @@ var Server = (function () {
                             params = JSON.parse(rawData);
                         else
                             params = rawData;
-                        resolve(params);
+                        resolve({ params: params, rawData: rawData });
                     });
                     return;
                 case RequestMethodEnum.GET:
                 case RequestMethodEnum.DELETE:
                 case RequestMethodEnum.OPTIONS:
                 default:
-                    params = querystring_1.default.parse(req.url.split('?')[1]);
-                    resolve(params);
+                    rawData = (_b = (_a = req.url) === null || _a === void 0 ? void 0 : _a.split('?')[1]) !== null && _b !== void 0 ? _b : '';
+                    params = querystring_1.default.parse(rawData);
+                    resolve({ params: params, rawData: rawData });
                     return;
             }
-        }).then(function (params) {
-            var _a;
+        }).then(function (_a) {
+            var _b;
+            var params = _a.params, rawData = _a.rawData;
             var api = _this.getApi(req);
             var apiKeys = Object.keys(proxy);
             var apiKey = apiKeys.find(function (k) {
@@ -320,7 +323,7 @@ var Server = (function () {
                 res.end(JSON.stringify(ErrorEnum.ERROR_404));
                 return;
             }
-            var _b = proxy[apiKey], changeOrigin = _b.changeOrigin, rewrite = _b.rewrite, target = _b.target;
+            var _c = proxy[apiKey], changeOrigin = _c.changeOrigin, rewrite = _c.rewrite, target = _c.target;
             var arr = target.split(':');
             var protocol = arr[0];
             var hostname = arr[1].substring(2, arr[1].length);
@@ -335,11 +338,18 @@ var Server = (function () {
                 protocol: "".concat(protocol, ":"),
                 port: port,
                 hostname: hostname,
-                path: rewrite ? rewrite((_a = req.url) !== null && _a !== void 0 ? _a : '') : req.url,
+                path: rewrite ? rewrite((_b = req.url) !== null && _b !== void 0 ? _b : '') : req.url,
                 method: method,
             };
             var httpX = arr[0] === 'https' ? https_1.default : http_1.default;
-            _this.proxyServerResponse(req, res, params, httpX, options);
+            _this.proxyServerResponse({
+                httpX: httpX,
+                options: options,
+                req: req,
+                res: res,
+                params: params,
+                rawData: rawData,
+            });
         });
     };
     Server.prototype.handleLocalUpload = function (req, res, params) {
@@ -409,9 +419,10 @@ var Server = (function () {
         }
         this.localServerResponse(req, res, params);
     };
-    Server.prototype.proxyServerResponse = function (req, res, params, httpX, options) {
+    Server.prototype.proxyServerResponse = function (_a) {
         var _this = this;
-        var _a = this.config, parseJSON = _a.parseJSON, server = _a.server;
+        var _b = _a === void 0 ? {} : _a, httpX = _b.httpX, options = _b.options, req = _b.req, res = _b.res, params = _b.params, rawData = _b.rawData;
+        var _c = this.config, parseJSON = _c.parseJSON, server = _c.server;
         if (this.isProxy2Server(req.headers.host || '', server))
             return this.forward2self(req, res, params);
         this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u8BF7\u6C42\u53C2\u6570:\r\n").concat(JSON.stringify(params, undefined, parseJSON ? '\t' : undefined)));
@@ -443,7 +454,7 @@ var Server = (function () {
                 }
             });
         });
-        req_.write(params);
+        req_.write(rawData);
         req_.end().on('error', function (e) {
             _this.log.error(e);
             res.end(JSON.stringify(e));
@@ -465,13 +476,11 @@ var Server = (function () {
         if (!proxy) {
             this.setMocks();
             args.push(this.handleLocalServerRequest.bind(this));
-            this.server = hp.createServer.apply(hp, args);
-            return;
         }
         else {
             args.push(this.handleProxyServerRequest.bind(this));
-            this.server = hp.createServer.apply(hp, args);
         }
+        this.server = hp.createServer.apply(hp, args);
     };
     Server.prototype.startServer = function () {
         var _this = this;
