@@ -28,6 +28,9 @@ const MOCKS_FILE_TEMPLATE_PATH = './template/response.js';
 const LOGS_DIR = 'logs';
 
 export const ASSETS_DIR = 'assets';
+const SVG_FILE_TEMPLATE = 'bird.svg';
+const SVG_FILE_TEMPLATE_PATH = './template/bird.svg';
+
 export const UPLOAD_DIR = 'upload';
 
 const SERVER_FILE_PATH = './server.js';
@@ -91,6 +94,12 @@ export class ServerBoot {
     if (!fs.existsSync(assetsPath) || !fs.statSync(assetsPath).isDirectory()) {
       fs.mkdirSync(assetsPath);
     }
+    const svgTestFile = path.resolve(assetsPath, SVG_FILE_TEMPLATE);
+    if (!fs.existsSync(svgTestFile) || !fs.statSync(svgTestFile).isFile())
+      fs.copyFileSync(
+        path.resolve(__dirname, SVG_FILE_TEMPLATE_PATH),
+        svgTestFile
+      );
 
     // 文件上传根路径
     const uploadPath = path.resolve(mockPath, UPLOAD_DIR);

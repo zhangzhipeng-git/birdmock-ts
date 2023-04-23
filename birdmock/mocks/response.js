@@ -1,13 +1,9 @@
 "use strict";
+var fs = require('fs');
+var path = require('path');
+var resolve = function (p) { return path.resolve(__dirname, p); };
 module.exports = {
-    '/api/*': function () {
-        return {
-            status: 200,
-            data: {
-                mock: 'birdmock',
-            },
-        };
-    },
+    // 根据参数返回不同数据
     '/example': function (params) {
         if (params.id === 1) {
             return {
@@ -26,18 +22,30 @@ module.exports = {
             };
         }
     },
-    '/static/elyra/r-logo.svg': function () {
-        return fs.readFileSync(resolve('./assets/r-logo.svg'));
-    },
-    '/elyra/pipeline/export': function () {
+    // 通配符匹配接口
+    '/api/*': function () {
         return {
-            filename: 'python.svg',
-            buffer: fs.readFileSync(resolve('./assets/python.svg')),
+            status: 200,
+            data: {
+                mock: 'birdmock',
+            },
         };
     },
+    // 请求静态资源，带.xxx后缀
+    '/static/test/bird.svg': function () {
+        return fs.readFileSync(resolve('../assets/bird.svg'));
+    },
+    // 请求静态资源，不带.xxx后缀
+    '/test/bird': function () {
+        return {
+            filename: 'bird.svg',
+            buffer: fs.readFileSync(resolve('../assets/bird.svg')),
+        };
+    },
+    // 上传文件
     '/upload/file': function (files) {
         console.log(files, '参数');
-        var fileArr = files.file;
+        var fileArr = files.file; // file 为formData的字段名
         var paths = [];
         fileArr.forEach(function (f) {
             var path = f.path;

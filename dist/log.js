@@ -1,4 +1,15 @@
 "use strict";
+/*
+ * File: log.ts
+ * Project: @bigbigbird/mock
+ * File Created: Thursday, 6th April 2023 4:09:06 pm
+ * Author: zhangzhipeng (1029512956@qq.com)
+ * -----
+ * Last Modified: Monday, 17th April 2023 2:48:31 pm
+ * Modified By: zhangzhipeng (1029512956@qq.com>)
+ * -----
+ * Copyright 2019 - 2023
+ */
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };

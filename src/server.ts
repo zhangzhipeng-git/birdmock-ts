@@ -36,6 +36,10 @@ enum ErrorEnum {
   UPLOAD = '文件上传错误',
 }
 
+enum WarnEnum {
+  NOT_MATCH_PROXY = `配置了代理，但是请求接口没有匹配上代理的接口前缀，回滚请求到本地 mock 服务`,
+}
+
 enum RequestMethodEnum {
   POST = 'POST',
   PUT = 'PUT',
@@ -189,26 +193,27 @@ class Server {
       server = DEFAULT_SERVER,
       parseJSON = false,
       proxy,
+      cors,
     } = config;
 
     const {
       parseJSON: cmdParseJSON,
       server: cmdServer,
       target,
-      rewrite,
+      pathRewrite,
       changeOrigin,
     } = process.env;
 
     if (target) {
       let arr = [''];
       // '^/api':'/xxx/'，将以api开头的接口代理到target，并将api重写为xxx
-      if (rewrite) arr = rewrite.replace(/'/g, '').split(':');
+      if (pathRewrite) arr = pathRewrite.replace(/'/g, '').split(':');
       if (!proxy) proxy = {};
       proxy[arr[0]] = {
         changeOrigin: changeOrigin === 'true',
         target,
         rewrite: url =>
-          !rewrite || rewrite.indexOf(':') < 0
+          !pathRewrite || pathRewrite.indexOf(':') < 0
             ? url
             : url.replace(new RegExp(arr[0]), arr[1]),
       };
@@ -227,6 +232,7 @@ class Server {
         cmdParseJSON !== undefined ? cmdParseJSON === 'true' : parseJSON,
       server: this.normalized(cmdServer || server),
       proxy,
+      cors,
     };
   }
   /**
@@ -321,36 +327,41 @@ class Server {
       res.end(JSON.stringify(e));
     });
 
-    let params,
-      rawData = '',
-      method = req.method;
-    switch (method) {
-      case RequestMethodEnum.POST:
-      case RequestMethodEnum.PUT:
-        if (this.expectRequestType(req, RequestTypeEnum.UPLOAD)) {
-          this.handleLocalUpload(req, res, params);
-          return;
-        }
-        req.setEncoding('utf-8');
-        req.on('data', chunk => {
-          rawData += chunk;
-        });
-        req.on('end', () => {
-          if (this.expectRequestType(req, RequestTypeEnum.GENERIC))
-            params = qs.parse(rawData);
-          else if (this.expectRequestType(req, RequestTypeEnum.JSON))
-            params = JSON.parse(rawData);
-          else params = rawData;
-        });
-        break;
-      case RequestMethodEnum.GET:
-      case RequestMethodEnum.DELETE:
-      case RequestMethodEnum.OPTIONS:
-      default:
-        params = qs.parse(req.url?.split('?')[1] ?? '');
-        break;
-    }
-    this.localServerResponse(req, res, params);
+    new Promise(resolve => {
+      let params,
+        rawData = '',
+        method = req.method;
+      switch (method) {
+        case RequestMethodEnum.POST:
+        case RequestMethodEnum.PUT:
+          if (this.expectRequestType(req, RequestTypeEnum.UPLOAD)) {
+            this.handleLocalUpload(req, res, params);
+            return;
+          }
+          req.setEncoding('utf-8');
+          req.on('data', chunk => {
+            rawData += chunk;
+          });
+          req.on('end', () => {
+            if (this.expectRequestType(req, RequestTypeEnum.GENERIC))
+              params = qs.parse(rawData);
+            else if (this.expectRequestType(req, RequestTypeEnum.JSON))
+              params = JSON.parse(rawData);
+            else params = rawData;
+            resolve(params);
+          });
+          break;
+        case RequestMethodEnum.GET:
+        case RequestMethodEnum.DELETE:
+        case RequestMethodEnum.OPTIONS:
+        default:
+          params = qs.parse(req.url?.split('?')[1] ?? '');
+          resolve(params);
+          break;
+      }
+    }).then(params => {
+      this.localServerResponse(req, res, params);
+    });
   }
 
   /**
@@ -367,7 +378,7 @@ class Server {
       res.end(JSON.stringify(e));
     });
 
-    const { proxy, server } = this.config;
+    const { proxy } = this.config;
     if (!proxy) return;
 
     new Promise(resolve => {
@@ -405,14 +416,10 @@ class Server {
         return new RegExp(k).test(api);
       });
 
+      // 没有找到代理配置，则请求本地 server
       if (!apiKey) {
-        if (this.isProxy2Server(req.headers.host || '', server))
-          return this.forward2self(req, res, params);
-
-        res.statusCode = CodeEnum.CODE_404;
-        res.setHeader('content-type', ResponseMimeEnum['.json']);
-        res.end(JSON.stringify(ErrorEnum.ERROR_404));
-        return;
+        this.log.warn(WarnEnum.NOT_MATCH_PROXY);
+        return this.forward2self(req, res, params);
       }
 
       const { changeOrigin, rewrite, target } = proxy[apiKey];
@@ -422,9 +429,9 @@ class Server {
       const hostname = arr[1].substring(2, arr[1].length);
       const method = req.method;
       const port = arr[2] ? +arr[2] : 80;
+      const host = `${hostname}${port != 80 ? ':' + port : ''}`;
 
-      if (changeOrigin)
-        req.headers.host = `${hostname}${port != 80 ? ':' + port : ''}`;
+      if (changeOrigin) req.headers.host = host;
       if (!req.headers['content-type'])
         req.headers['content-type'] = RequestMimeEnum.generic;
 
@@ -440,6 +447,7 @@ class Server {
       const httpX = arr[0] === 'https' ? https : http;
       this.proxyServerResponse({
         httpX,
+        host,
         options,
         req,
         res,
@@ -506,6 +514,15 @@ class Server {
       res.statusCode = CodeEnum.CODE_404;
       res.setHeader('content-type', ResponseMimeEnum['.json']);
       res.end(JSON.stringify(ErrorEnum.ERROR_404));
+
+      this.log.info(
+        `[${req.headers['host']}] [${req.url}]${req.method}=>响应:\r\n` +
+          JSON.stringify(
+            ErrorEnum.ERROR_404,
+            undefined,
+            parseJSON ? '\t' : undefined
+          )
+      );
       return;
     }
 
@@ -571,6 +588,7 @@ class Server {
   /**
    * 代理响应
    * @param {http | https} args.httpX 协议
+   * @param {string} args.host 请求主机
    * @param {object} args.options 请求选项配置
    * @param {http.IncomingMessage} args.req 请求
    * @param {http.ServerResponse} args.res 响应
@@ -578,8 +596,9 @@ class Server {
    * @param {object} args.rawData 请求参数（原本格式）
    */
   proxyServerResponse(
-    { httpX, options, req, res, params, rawData } = {} as {
+    { httpX, host, options, req, res, params, rawData } = {} as {
       httpX: any;
+      host: string;
       options: any;
       req: http.IncomingMessage;
       res: http.ServerResponse;
@@ -589,14 +608,12 @@ class Server {
   ) {
     const { parseJSON, server } = this.config;
 
-    // 通过 server 服务代理到了 server 服务本身（不推荐这样做，多此一举...）
-    if (this.isProxy2Server(req.headers.host || '', server))
+    // 通过 server 服务代理到了 server 服务本身
+    if (this.isProxy2Server(host, server))
       return this.forward2self(req, res, params);
 
     this.log.info(
-      `[${req.headers['host']}] [${req.url}]${
-        req.method
-      }=>请求参数:\r\n${JSON.stringify(
+      `[${host}] [${req.url}]${req.method}=>请求参数:\r\n${JSON.stringify(
         params,
         undefined,
         parseJSON ? '\t' : undefined
@@ -628,14 +645,12 @@ class Server {
         try {
           const obj = JSON.parse(resStr);
           this.log.info(
-            `[${req.headers['host']}] [${req.url}]${req.method}=>响应:\r\n` +
+            `[${host}] [${req.url}]${req.method}=>响应:\r\n` +
               JSON.stringify(obj, void 0, parseJSON ? '\t' : void 0)
           );
         } catch (e) {
-          console.log('对方返回了非json格式数据~'.red.bold);
           this.log.info(
-            `[${req.headers['host']}] [${req.url}]${req.method}=>响应:\r\n` +
-              buffer
+            `[${host}] [${req.url}]${req.method}=>响应:\r\n` + buffer
           );
         }
       });
@@ -687,8 +702,8 @@ class Server {
         const mocksCount = Object.keys(this.mocks).length;
         console.log(
           '='.repeat(5).rainbow.bold.toString() +
-            '本地模式已启动'.green.bold +
-            `{ proxy => ${server} } { 接口数量:${mocksCount} }`.yellow +
+            `本地模式已启动`.green.bold +
+            `{/ => ${server}} { 接口数量:${mocksCount} }`.yellow +
             '='.repeat(5).rainbow.bold
         );
         return;
@@ -703,6 +718,7 @@ class Server {
         });
       }
     });
+
     this.server.on('error', e => {
       console.error(e);
       process.exit(0);

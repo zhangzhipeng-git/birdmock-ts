@@ -1,4 +1,15 @@
 "use strict";
+/*
+ * File: server.ts
+ * Project: @bigbigbird/mock
+ * File Created: Monday, 10th April 2023 2:11:35 pm
+ * Author: zhangzhipeng (1029512956@qq.com)
+ * -----
+ * Last Modified: Monday, 17th April 2023 2:48:40 pm
+ * Modified By: zhangzhipeng (1029512956@qq.com>)
+ * -----
+ * Copyright 2019 - 2023
+ */
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -34,7 +45,7 @@ var zlib_1 = require("zlib");
 var log_1 = require("./log");
 var util_1 = require("./util");
 var buffer_1 = require("buffer");
-var multiparty_1 = __importDefault(require("multiparty"));
+var multiparty_1 = __importDefault(require("multiparty")); // 文件上传解析模块
 var _1 = require(".");
 var CodeEnum;
 (function (CodeEnum) {
@@ -48,6 +59,10 @@ var ErrorEnum;
     ErrorEnum["MOCK_REGISTER"] = "mock \u6587\u4EF6\u6CE8\u518C\u5931\u8D25";
     ErrorEnum["UPLOAD"] = "\u6587\u4EF6\u4E0A\u4F20\u9519\u8BEF";
 })(ErrorEnum || (ErrorEnum = {}));
+var WarnEnum;
+(function (WarnEnum) {
+    WarnEnum["NOT_MATCH_PROXY"] = "\u914D\u7F6E\u4E86\u4EE3\u7406\uFF0C\u4F46\u662F\u8BF7\u6C42\u63A5\u53E3\u6CA1\u6709\u5339\u914D\u4E0A\u4EE3\u7406\u7684\u63A5\u53E3\u524D\u7F00\uFF0C\u56DE\u6EDA\u8BF7\u6C42\u5230\u672C\u5730 mock \u670D\u52A1";
+})(WarnEnum || (WarnEnum = {}));
 var RequestMethodEnum;
 (function (RequestMethodEnum) {
     RequestMethodEnum["POST"] = "POST";
@@ -94,8 +109,9 @@ var CORSEnum;
 })(CORSEnum || (CORSEnum = {}));
 var LOCAL_REG = /localhost|127\.0\.0\.1/;
 var DEFAULT_SERVER = 'localhost:4201';
-var Server = (function () {
+var Server = /** @class */ (function () {
     function Server() {
+        /** birdmock相关文件根目录 */
         this.rootPath = '';
         this.setRootPath();
         this.setConfig();
@@ -103,6 +119,10 @@ var Server = (function () {
         this.createServer();
         this.startServer();
     }
+    /**
+     * 规范化链接
+     * @param {string} url 链接
+     */
     Server.prototype.normalized = function (url) {
         if (!url)
             return '';
@@ -112,6 +132,10 @@ var Server = (function () {
             return "http://".concat(url);
         return url;
     };
+    /**
+     * 获取端口
+     * @param {string} url 链接
+     */
     Server.prototype.getPort = function (url) {
         if (!url)
             return;
@@ -120,6 +144,11 @@ var Server = (function () {
         var arr = url.split(':');
         return arr[2] ? +arr[2] : arr[1] ? +arr[1] : 80;
     };
+    /**
+     * 判断是否代理到server
+     * @param {string} host 目标请求主机
+     * @param {string} server 本地服务
+     */
     Server.prototype.isProxy2Server = function (host, server) {
         if (!host || !server)
             return false;
@@ -134,9 +163,15 @@ var Server = (function () {
         }
         return false;
     };
+    /**
+     * 获取父进程传过来参数，路径集合
+     */
     Server.prototype.getPaths = function () {
         return process.argv.slice(2);
     };
+    /**
+     * 路径解析
+     */
     Server.prototype.resolve = function () {
         var dir = [];
         for (var _i = 0; _i < arguments.length; _i++) {
@@ -144,26 +179,33 @@ var Server = (function () {
         }
         return path_1.default.resolve.apply(path_1.default, __spreadArray([process.cwd()], dir, false));
     };
+    /**
+     * 设置birdmock根目录
+     */
     Server.prototype.setRootPath = function () {
         this.rootPath = this.resolve(process.env.mockRootPath || _1.DEFAULT_ROOT_PATH);
     };
+    /**
+     * 设置配置项
+     */
     Server.prototype.setConfig = function () {
         var _this = this;
         var configPath = this.getPaths()[0];
         var config = require(configPath);
-        var _a = config.watchDebounceTime, watchDebounceTime = _a === void 0 ? 1000 : _a, _b = config.server, server = _b === void 0 ? DEFAULT_SERVER : _b, _c = config.parseJSON, parseJSON = _c === void 0 ? false : _c, proxy = config.proxy;
-        var _d = process.env, cmdParseJSON = _d.parseJSON, cmdServer = _d.server, target = _d.target, rewrite = _d.rewrite, changeOrigin = _d.changeOrigin;
+        var _a = config.watchDebounceTime, watchDebounceTime = _a === void 0 ? 1000 : _a, _b = config.server, server = _b === void 0 ? DEFAULT_SERVER : _b, _c = config.parseJSON, parseJSON = _c === void 0 ? false : _c, proxy = config.proxy, cors = config.cors;
+        var _d = process.env, cmdParseJSON = _d.parseJSON, cmdServer = _d.server, target = _d.target, pathRewrite = _d.pathRewrite, changeOrigin = _d.changeOrigin;
         if (target) {
             var arr_1 = [''];
-            if (rewrite)
-                arr_1 = rewrite.replace(/'/g, '').split(':');
+            // '^/api':'/xxx/'，将以api开头的接口代理到target，并将api重写为xxx
+            if (pathRewrite)
+                arr_1 = pathRewrite.replace(/'/g, '').split(':');
             if (!proxy)
                 proxy = {};
             proxy[arr_1[0]] = {
                 changeOrigin: changeOrigin === 'true',
                 target: target,
                 rewrite: function (url) {
-                    return !rewrite || rewrite.indexOf(':') < 0
+                    return !pathRewrite || pathRewrite.indexOf(':') < 0
                         ? url
                         : url.replace(new RegExp(arr_1[0]), arr_1[1]);
                 },
@@ -180,8 +222,12 @@ var Server = (function () {
             parseJSON: cmdParseJSON !== undefined ? cmdParseJSON === 'true' : parseJSON,
             server: this.normalized(cmdServer || server),
             proxy: proxy,
+            cors: cors,
         };
     };
+    /**
+     * 设置mock数据
+     */
     Server.prototype.setMocks = function () {
         if (!!this.mocks)
             return;
@@ -200,17 +246,33 @@ var Server = (function () {
         });
         this.mocks = mocks;
     };
+    /**
+     * 设置 log
+     */
     Server.prototype.setLog = function () {
         var logsPath = this.getPaths()[2];
         this.log = (0, log_1.getLogger)(logsPath);
     };
+    /**
+     * 预期请求类型
+     */
     Server.prototype.expectRequestType = function (req, type) {
         return ((req.headers['content-type'] || '').indexOf(RequestMimeEnum[type]) > -1);
     };
+    /**
+     * 获取接口地址，去掉后面的查询参数
+     * @param {http.IncomingMessage} req 请求体
+     */
     Server.prototype.getApi = function (req) {
         var _a, _b;
         return (_b = (_a = req.url) === null || _a === void 0 ? void 0 : _a.split('?')[0]) !== null && _b !== void 0 ? _b : '';
     };
+    /**
+     * 寻找mocks文件夹下，js文件中已经注册的接口地址
+     * @param {string[]} keys mock 建集合
+     * @param {string} api 接口地址
+     * @returns {string} mock 键
+     */
     Server.prototype.getMatchKey = function (keys, api) {
         if (api.indexOf('?') > -1)
             api = api.split('?')[0];
@@ -224,6 +286,9 @@ var Server = (function () {
                 arr2.every(function (dir, i) { return dir === '*' || dir === arr1[i]; }));
         }) || null);
     };
+    /**
+     * 开启跨域
+     */
     Server.prototype.enableCORS = function (res) {
         var cors = this.config.cors;
         if (!cors)
@@ -233,50 +298,65 @@ var Server = (function () {
         res.setHeader(CORSEnum.METHODS, cors.methods || '*');
         res.setHeader(CORSEnum.CREDENTIALS, (cors.credentials || true) + '');
     };
+    /**
+     * 处理本地请求
+     * @param {http.IncomingHttpHeaders} req 请求
+     * @param {http.ServerResponse} res 响应
+     */
     Server.prototype.handleLocalServerRequest = function (req, res) {
         var _this = this;
-        var _a, _b;
         req.on('error', function (e) {
             _this.log.error(e);
             res.end(JSON.stringify(e));
         });
-        var params, rawData = '', method = req.method;
-        switch (method) {
-            case RequestMethodEnum.POST:
-            case RequestMethodEnum.PUT:
-                if (this.expectRequestType(req, RequestTypeEnum.UPLOAD)) {
-                    this.handleLocalUpload(req, res, params);
-                    return;
-                }
-                req.setEncoding('utf-8');
-                req.on('data', function (chunk) {
-                    rawData += chunk;
-                });
-                req.on('end', function () {
-                    if (_this.expectRequestType(req, RequestTypeEnum.GENERIC))
-                        params = querystring_1.default.parse(rawData);
-                    else if (_this.expectRequestType(req, RequestTypeEnum.JSON))
-                        params = JSON.parse(rawData);
-                    else
-                        params = rawData;
-                });
-                break;
-            case RequestMethodEnum.GET:
-            case RequestMethodEnum.DELETE:
-            case RequestMethodEnum.OPTIONS:
-            default:
-                params = querystring_1.default.parse((_b = (_a = req.url) === null || _a === void 0 ? void 0 : _a.split('?')[1]) !== null && _b !== void 0 ? _b : '');
-                break;
-        }
-        this.localServerResponse(req, res, params);
+        new Promise(function (resolve) {
+            var _a, _b;
+            var params, rawData = '', method = req.method;
+            switch (method) {
+                case RequestMethodEnum.POST:
+                case RequestMethodEnum.PUT:
+                    if (_this.expectRequestType(req, RequestTypeEnum.UPLOAD)) {
+                        _this.handleLocalUpload(req, res, params);
+                        return;
+                    }
+                    req.setEncoding('utf-8');
+                    req.on('data', function (chunk) {
+                        rawData += chunk;
+                    });
+                    req.on('end', function () {
+                        if (_this.expectRequestType(req, RequestTypeEnum.GENERIC))
+                            params = querystring_1.default.parse(rawData);
+                        else if (_this.expectRequestType(req, RequestTypeEnum.JSON))
+                            params = JSON.parse(rawData);
+                        else
+                            params = rawData;
+                        resolve(params);
+                    });
+                    break;
+                case RequestMethodEnum.GET:
+                case RequestMethodEnum.DELETE:
+                case RequestMethodEnum.OPTIONS:
+                default:
+                    params = querystring_1.default.parse((_b = (_a = req.url) === null || _a === void 0 ? void 0 : _a.split('?')[1]) !== null && _b !== void 0 ? _b : '');
+                    resolve(params);
+                    break;
+            }
+        }).then(function (params) {
+            _this.localServerResponse(req, res, params);
+        });
     };
+    /**
+     * 处理代理请求
+     * @param {http.IncomingHttpHeaders} req 请求
+     * @param {http.ServerResponse} res 响应
+     */
     Server.prototype.handleProxyServerRequest = function (req, res) {
         var _this = this;
         req.on('error', function (e) {
             _this.log.error(e);
             res.end(JSON.stringify(e));
         });
-        var _a = this.config, proxy = _a.proxy, server = _a.server;
+        var proxy = this.config.proxy;
         if (!proxy)
             return;
         new Promise(function (resolve) {
@@ -311,26 +391,26 @@ var Server = (function () {
             var _b;
             var params = _a.params, rawData = _a.rawData;
             var api = _this.getApi(req);
+            // 检测是否匹配到proxy配置
             var apiKeys = Object.keys(proxy);
             var apiKey = apiKeys.find(function (k) {
                 return new RegExp(k).test(api);
             });
+            // 没有找到代理配置，则请求本地 server
             if (!apiKey) {
-                if (_this.isProxy2Server(req.headers.host || '', server))
-                    return _this.forward2self(req, res, params);
-                res.statusCode = CodeEnum.CODE_404;
-                res.setHeader('content-type', ResponseMimeEnum['.json']);
-                res.end(JSON.stringify(ErrorEnum.ERROR_404));
-                return;
+                _this.log.warn(WarnEnum.NOT_MATCH_PROXY);
+                return _this.forward2self(req, res, params);
             }
             var _c = proxy[apiKey], changeOrigin = _c.changeOrigin, rewrite = _c.rewrite, target = _c.target;
             var arr = target.split(':');
+            // 默认http协议
             var protocol = arr[0];
             var hostname = arr[1].substring(2, arr[1].length);
             var method = req.method;
             var port = arr[2] ? +arr[2] : 80;
+            var host = "".concat(hostname).concat(port != 80 ? ':' + port : '');
             if (changeOrigin)
-                req.headers.host = "".concat(hostname).concat(port != 80 ? ':' + port : '');
+                req.headers.host = host;
             if (!req.headers['content-type'])
                 req.headers['content-type'] = RequestMimeEnum.generic;
             var options = {
@@ -344,6 +424,7 @@ var Server = (function () {
             var httpX = arr[0] === 'https' ? https_1.default : http_1.default;
             _this.proxyServerResponse({
                 httpX: httpX,
+                host: host,
                 options: options,
                 req: req,
                 res: res,
@@ -352,6 +433,12 @@ var Server = (function () {
             });
         });
     };
+    /**
+     * 上传文件
+     * @param {http.IncomingMessage} req 请求
+     * @param {http.ServerResponse} res 响应
+     * @param params ?
+     */
     Server.prototype.handleLocalUpload = function (req, res, params) {
         var _this = this;
         var form = new multiparty_1.default.Form({
@@ -363,6 +450,12 @@ var Server = (function () {
             _this.localServerResponse(req, res, __assign(__assign({}, fields), files));
         });
     };
+    /**
+     * 本地服务响应
+     * @param {http.IncomingMessage} req 请求
+     * @param {http.ServerResponse} res 响应
+     * @param {object} params 请求参数
+     */
     Server.prototype.localServerResponse = function (req, res, params) {
         var _this = this;
         var parseJSON = this.config.parseJSON;
@@ -372,16 +465,20 @@ var Server = (function () {
             return res.end();
         var api = this.getApi(req);
         var key = this.getMatchKey(Object.keys(this.mocks), api);
+        // 未找到注册的接口
         if (!key) {
             res.statusCode = CodeEnum.CODE_404;
             res.setHeader('content-type', ResponseMimeEnum['.json']);
             res.end(JSON.stringify(ErrorEnum.ERROR_404));
+            this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u54CD\u5E94:\r\n") +
+                JSON.stringify(ErrorEnum.ERROR_404, undefined, parseJSON ? '\t' : undefined));
             return;
         }
         var value = this.mocks[key];
         if (typeof value === 'function')
             value = value(params);
         setTimeout(function () {
+            // 自定义响应状态码数据： {statusCode: 200, data: {...真正的响应数据}}
             if (value && value.statusCode) {
                 res.statusCode = value.statusCode;
                 value = value.data;
@@ -389,21 +486,24 @@ var Server = (function () {
             var isFile = true;
             var match = key.match(/\.(?:svg|jpg|jpeg|png|gif|wav|txt|css|html|js)/);
             if (match) {
+                // 根据接口地址后缀来匹配，模拟返回文件流，如：http://localhost:4201/api/xxx.jpg
                 var k = match[0];
                 res.setHeader('Content-type', ResponseMimeEnum[k]);
-                res.end(value);
+                res.end(value); // buffer
             }
             else if (value && value.buffer && value.buffer instanceof buffer_1.Buffer) {
+                // 固定格式：{filename: xxx, buffer: xxx, 'Content-Type': xxx}，模拟返回文件流
                 res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
                 res.setHeader('Content-Disposition', "attachment;filename=".concat(value.filename));
                 res.setHeader('Content-type', value['Content-Type'] || ResponseMimeEnum.DEFAULT);
-                res.end(value.buffer);
+                res.end(value.buffer); // buffer
             }
             else {
+                // json 格式返回
                 isFile = false;
                 value = mockjs_1.default.mock(value);
                 res.setHeader('Content-Type', ResponseMimeEnum['.json']);
-                res.end(JSON.stringify(value));
+                res.end(JSON.stringify(value)); // string
             }
             _this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u54CD\u5E94:\r\n") +
                 (isFile
@@ -419,15 +519,27 @@ var Server = (function () {
         }
         this.localServerResponse(req, res, params);
     };
+    /**
+     * 代理响应
+     * @param {http | https} args.httpX 协议
+     * @param {string} args.host 请求主机
+     * @param {object} args.options 请求选项配置
+     * @param {http.IncomingMessage} args.req 请求
+     * @param {http.ServerResponse} args.res 响应
+     * @param {object} args.params 请求参数（对象格式）
+     * @param {object} args.rawData 请求参数（原本格式）
+     */
     Server.prototype.proxyServerResponse = function (_a) {
         var _this = this;
-        var _b = _a === void 0 ? {} : _a, httpX = _b.httpX, options = _b.options, req = _b.req, res = _b.res, params = _b.params, rawData = _b.rawData;
+        var _b = _a === void 0 ? {} : _a, httpX = _b.httpX, host = _b.host, options = _b.options, req = _b.req, res = _b.res, params = _b.params, rawData = _b.rawData;
         var _c = this.config, parseJSON = _c.parseJSON, server = _c.server;
-        if (this.isProxy2Server(req.headers.host || '', server))
+        // 通过 server 服务代理到了 server 服务本身
+        if (this.isProxy2Server(host, server))
             return this.forward2self(req, res, params);
-        this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u8BF7\u6C42\u53C2\u6570:\r\n").concat(JSON.stringify(params, undefined, parseJSON ? '\t' : undefined)));
+        this.log.info("[".concat(host, "] [").concat(req.url, "]").concat(req.method, "=>\u8BF7\u6C42\u53C2\u6570:\r\n").concat(JSON.stringify(params, undefined, parseJSON ? '\t' : undefined)));
         var req_ = httpX.request(options, function (res_) {
             var buffer = [];
+            // 这里不设置字符编码，默认是Buffer对象（nodejs官网api有说明）
             res_.on('data', function (chunk) {
                 buffer.push(chunk);
             });
@@ -435,25 +547,27 @@ var Server = (function () {
                 var _a;
                 buffer = buffer_1.Buffer.concat(buffer);
                 res.setHeader('Content-Type', (_a = res_.headers['Content-Type']) !== null && _a !== void 0 ? _a : '');
+                // CORS
                 _this.enableCORS(res);
                 res.statusCode = res_.statusCode || res.statusCode;
                 res.end(buffer);
+                // 以下流程仅用于日志打印
                 var resStr, bf = buffer;
+                // 如果是gzip压缩的，需要解压一下
                 if ((res_.headers['content-encoding'] || '').indexOf('gzip') > -1)
                     bf = (0, zlib_1.gunzipSync)(buffer);
                 resStr = bf.toString('utf-8');
                 try {
                     var obj = JSON.parse(resStr);
-                    _this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u54CD\u5E94:\r\n") +
+                    _this.log.info("[".concat(host, "] [").concat(req.url, "]").concat(req.method, "=>\u54CD\u5E94:\r\n") +
                         JSON.stringify(obj, void 0, parseJSON ? '\t' : void 0));
                 }
                 catch (e) {
-                    console.log('对方返回了非json格式数据~'.red.bold);
-                    _this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u54CD\u5E94:\r\n") +
-                        buffer);
+                    _this.log.info("[".concat(host, "] [").concat(req.url, "]").concat(req.method, "=>\u54CD\u5E94:\r\n") + buffer);
                 }
             });
         });
+        // 设置请求体
         req_.write(rawData);
         req_.end().on('error', function (e) {
             _this.log.error(e);
@@ -482,6 +596,9 @@ var Server = (function () {
         }
         this.server = hp.createServer.apply(hp, args);
     };
+    /**
+     * 启动服务
+     */
     Server.prototype.startServer = function () {
         var _this = this;
         var _a = this.config, _b = _a.server, server = _b === void 0 ? DEFAULT_SERVER : _b, proxy = _a.proxy;
@@ -493,8 +610,8 @@ var Server = (function () {
             if (!proxy) {
                 var mocksCount = Object.keys(_this.mocks).length;
                 console.log('='.repeat(5).rainbow.bold.toString() +
-                    '本地模式已启动'.green.bold +
-                    "{ proxy => ".concat(server, " } { \u63A5\u53E3\u6570\u91CF:").concat(mocksCount, " }").yellow +
+                    "\u672C\u5730\u6A21\u5F0F\u5DF2\u542F\u52A8".green.bold +
+                    "{/ => ".concat(server, "} { \u63A5\u53E3\u6570\u91CF:").concat(mocksCount, " }").yellow +
                     '='.repeat(5).rainbow.bold);
                 return;
             }

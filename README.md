@@ -1,117 +1,195 @@
 # birdmock（结合 mockjs 开发的本地 mock 服务）
 
+- 不依赖 Webpack 等构建开发工具，可以独立在本地运行 http/https 服务；
+- 支持静态资源获取、上传文件、跨域请求和 https 请求；
+- 支持正向代理，即从本地启动的服务代理到目标服务；
+- 支持 http/https 请求日志记录；
+- 支持配置其他开发工具的 proxy 代理到 birdmock 启动的服务；
+
+`P.s. 本地 mock 服务是模拟后端的服务，故本地 https 请求会提示连接不安全，这个不影响本地开发使用。`
+
 ## 安装
+
+---
+
+使用 npm 安装
 
 ```shell
 npm i @bigbigbird/mock -D
 ```
 
-## mock 配置
+使用 yarn 安装
 
-优先读取环境变量的 mockPath 的路径，并自动在该目录下建立相关 mock 文件，没有则自动在项目根目录创建，它的默认文件结构应该是这样的：
-
-```*
- -项目根路径
- -birdmock
-    -logs           # 日志目录
-    -mocks          # mock文件目录
-    -config.js      # birdmock配置文件
-    -assets         # 静态资源
-    -upload         # 文件上传目录
+```
+yarn add @bigbigbird/mock -D
 ```
 
-## 默认代理配置（in birdmock/config.js）
+## 使用
 
-```js
-module.exports = {
-  /** 修改 mock 文件时重启服务的防抖时间 */
-  watchDebounceTime: 1000,
-  /** 日志是否格式化响应的json数据 */
-  parseJSON: false,
-  /** 正向代理地址 */
-  server: 'localhost:4201',
-  /** 目标地址 */
-  proxy: {
-    '/api': {
-      target: 'http:x.x.x.x:8080',
-      changeOrigin: true,
-      rewrite: url => url,
-    },
-  },
-  /** 跨域配置 */
-  cors: {
-    origin: 'localhost:4200',
-    headers: 'xxx,yyy,zzz',
-    methods: 'GET,POST',
-    credentials: 'true',
-  },
-};
-```
+---
 
-1.birdmock 不依赖 webpack 等开发工具，可单独启动服务，支持跨域、请求静态资源和文件上传；
+### 启动默认的 mock 服务
 
-2.proxy 中 target 表示 server 要转发以指定 api 前缀开头的请求到目标服务器的服务器地址；
-
-3.server 为本地的服务地址，如: localhost:4201
-
-4.在 webpack 配置中，可以将 proxy 配置到本地 server，可以记录日志。
-
-## 可以单独启动本地服务，或通过本地服务代理到 target 目标服务
-
-in package.json
+修改 package.json 中的 `scripts` 配置。
 
 ```json
 "scripts": {
-    "mock": "birdmock"
+  "mock": "birdmock"
 }
 ```
 
-```shell
+执行上述命令
+
+```bash
 npm run mock
 ```
 
-```json
-"scripts": {
-    "mock:proxy": "cross-env target=https://zhangzhipeng-git.github.io/ birdmock",,
-    "mock:proxy1": "cross-env target=https://zhangzhipeng-git.github.io/ rewrite='^/api':'/xxx' changeOrigin=true birdmock",
-}
+执行命令后，会根据默认配置启动 mock 服务，如果服务启动成功，则终端会打印如下内容。
+
+```
+=====代理模式已启动=====
+{ /api => http://127.0.0.1:4201 }
 ```
 
-```shell
-npm run mock:proxy
+并且在启动 mock 服务之前，会自动地在项目根目录生成 birdmock 文件夹，其目录结构如下。
+
+```
+ -项目根路径
+ -birdmock
+    -assets         # 静态资源目录
+    -logs           # 日志目录
+    -mocks          # mock文件目录
+    -upload         # 文件上传目录
+    -config.js      # birdmock配置文件
 ```
 
-## 引入到 webpack 配置
+birdmock 的默认配置在 `birdmock/config.js` 中。
 
 ```js
-var config = require('./birdmock/config.js');
+'use strict';
 module.exports = {
-  devServer: {
-    proxy: {
-      '^/api': {
-        target: config.server,
+  // 修改 mock 文件时重启服务的防抖时间
+  watchDebounceTime: 2000,
+  // 日志是否格式化响应的json
+  parseJSON: false,
+  // 本地服务（对于客户端源服务来说，通过birdmock开启的服务是第三方服务）
+  server: 'localhost:4201',
+  // 可选代理服务（可通过server服务代理到目标服务）
+  proxy: {
+    '/api': {
+      target: 'http://127.0.0.1:4201',
+      changeOrigin: true,
+      rewrite: function (url) {
+        return url;
       },
-      // '^/': {
-      //   target: config.server,
-      // },
+    },
+    '/ipa': {
+      target: 'http://127.0.0.1:4202',
+      changeOrigin: true,
+      rewrite: function (url) {
+        return url;
+      },
+    },
+  },
+  // 可选跨域配置
+  cors: {
+    // 源服务，默认值：'*'
+    origin: '*',
+    // 允许的请求头字段，默认值：'*'
+    headers: '*',
+    // 允许的请求方法，默认值：'*'
+    methods: '*',
+    // 是否允许跨域携带 cookie
+    // 如果需要跨域携带 cookie ，则上述默认值不能设置为'*'
+    credentials: 'false',
+  },
+};
+```
+
+### 启动简单的 mock 服务
+
+默认启动的 mock 服务会将以 `/api` 开头的接口代理转发到自身，一般开发的时候不需要这么做，应该是代理到后端的服务地址，这里是为了兼容“可以代理到自身服务”的使用场景。所以，如果不需要代理和跨域请求，一个简单地配置应该是这样的。
+
+```js
+module.exports = {
+  // 修改配置文件或 mock 文件时，重启 mock 服务的防抖时间
+  watchDebounceTime: 2000,
+  // 日志是否格式化响应的 json 数据
+  parseJSON: false,
+  // 本地服务地址
+  server: 'http://localhost:4201',
+};
+```
+
+在修改配置文件后，mock 服务会自动地进行重启，并在控制台打印如下内容。
+
+```
+服务器重启中...
+=====本地模式已启动{/ => http://localhost:4201} { 接口数量:5 }=====
+```
+
+### 启动代理 mock 服务
+
+在配置文件中加上 proxy 配置
+
+```js
+module.exports = {
+  // 修改配置文件或 mock 文件时，重启 mock 服务的防抖时间
+  watchDebounceTime: 2000,
+  // 日志是否格式化响应的 json 数据
+  parseJSON: false,
+  // 本地服务地址
+  server: 'http://localhost:4201',
+  // 代理配置
+  proxy: {
+    '/api': {
+      // 这里应修改为你实际要代理的目标服务地址
+      target: 'http://127.0.0.1:4201',
+      changeOrigin: true,
+      rewrite: function (url) {
+        console.log(url, '/api');
+        return url;
+      },
+    },
+    '/ipa': {
+      // 这里应修改为你实际要代理的目标服务地址
+      target: 'http://127.0.0.1:4202',
+      changeOrigin: true,
+      rewrite: function (url) {
+        console.log(url, '/');
+        return url;
+      },
     },
   },
 };
 ```
 
-## mock 文件示例
+还可以直接从命令行配置代理，但这种方式只能配置一个代理，没有使用配置文件灵活。在 package.json 的 `scripts` 中添加如下命令。
+
+```json
+"scripts": {
+  "mock:proxy": "cross-env target=localhost:4202 pathRewrite='^/api':'/ipa' changeOrigin=true birdmock"
+}
+```
+
+从命令行启动这个本地代理服务
+
+```bash
+npm run mock:proxy
+```
+
+**上述 `pathRewrite` 表示会将接口匹配正则 `^/api` 的字符串替换为 `/ipa` ，这和配置文件中的 `rewrite` 配置不同，请求接口会被重写为 `rewrite` 函数执行后的返回值。**
+
+### 请求静态资源
+
+如果接口需要请求静态资源，则应事先在 `birdmock/assets` 目录下放置对应的静态资源，然后在 mock 文件中按照示例来注册请求静态资源的接口。
+
+### mock 文件
+
+mock 文件存放在 `birdmock/mocks` 目录下，该目录下所有以 `.js` 结尾的文件所导出的键值对对象都会被注册到 mock 服务的 mock 数据中，mock 文件示例如下。
 
 ```js
 module.exports = {
-  // 通配符匹配接口
-  '/api/*': () => {
-    return {
-      status: 200,
-      data: {
-        mock: 'birdmock',
-      },
-    };
-  },
   // 根据参数返回不同数据
   '/example': params => {
     if (params.id === 1) {
@@ -129,6 +207,15 @@ module.exports = {
         },
       };
     }
+  },
+  // 通配符匹配接口
+  '/api/*': () => {
+    return {
+      status: 200,
+      data: {
+        mock: 'birdmock',
+      },
+    };
   },
   // 请求静态资源，带.xxx后缀
   '/static/elyra/r-logo.svg': () => {
@@ -158,112 +245,119 @@ module.exports = {
 };
 ```
 
-## 接口请求（本地服务模式）示例
+只要接口地址匹配到了如上述 mock 数据中的“键”（比如 `/example` ），则会返回该键所对应的值。
 
-in package.json
-
-```json
-"scripts": {
-    "mock": "birdmock"
-}
-```
-
-```shell
-npm run mock
-```
-
-in template
+### 使用示例
 
 ```html
-<template>
-  <div id="app">
-    <pre><code ref="json" class="json">{{res1|json}}</code></pre>
-  </div>
-</template>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <script type="text/javascript">
+      var baseUrl = 'http://localhost:4201';
+      var qs = {
+        stringify: params => {
+          var arr = [];
+          Object.keys(params).forEach(k => {
+            arr.push(`${k}=${params[k]}`);
+          });
+          return arr.join('&');
+        },
+      };
+      function log(url, res) {
+        console.log(`${url}:`, JSON.stringify(res, null, 2));
+      }
+      function request({
+        method = 'GET',
+        url,
+        headers,
+        responseType = 'json',
+        params,
+      }) {
+        var http = new XMLHttpRequest();
+        var src = `${baseUrl}${url}`;
+
+        if (params) {
+          switch (method) {
+            case 'GET':
+            case 'DELETE':
+              params = qs.stringify(params);
+              src += `?${params}`;
+              break;
+            case 'POST':
+            case 'PUT':
+              // json
+              if (headers && headers['content-type'].indexOf('json') > -1) {
+                params = JSON.stringify(params);
+                break;
+              }
+              if (!headers) {
+                headers = {};
+              }
+              // 非 json
+              headers['content-type'] = 'application/x-www-form-urlencoded';
+              break;
+          }
+        }
+
+        http.responseType = responseType;
+        http.open(method, src, true);
+
+        if (headers) {
+          Object.keys(headers).forEach(k => {
+            http.setRequestHeader(k, headers[k]);
+          });
+        }
+
+        http.send(params);
+        return new Promise(resolve => {
+          http.onload = () => {
+            resolve({ url, res: http });
+          };
+        });
+      }
+
+      request({ url: '/api/example', params: { a: 1, b: 2 } }).then(
+        ({ url, res }) => {
+          log(url, res.response);
+        }
+      );
+      request({
+        url: '/ipa/example',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        params: { c: 3, d: 4 },
+      }).then(({ url, res }) => {
+        log(url, res.response);
+      });
+      request({ url: '/static/test/bird.svg', responseType: 'text' }).then(
+        ({ url, res }) => {
+          var style = document.createElement('style');
+          style.innerText = 'svg {height: 200px;width:200px}';
+          document.head.appendChild(style);
+          document.body.innerHTML = res.responseText;
+          log(url, res.responseText);
+        }
+      );
+    </script>
+  </body>
+</html>
 ```
 
-in ts
+## 问题反馈
 
-```typescript
-<script lang="ts">
-import { Component, Vue } from 'vue-property-decorator';
-import axios from 'axios';
-@Component({
-  filters: {
-    json(o: any) {
-      return JSON.stringify(o, null, '\t');
-    }
-  }
-})
-export default class App extends Vue {
-  res1: any = {};
-  beforeMount() {
-    const baseURL = process.env.NODE_ENV === 'development' ? '/api' : '';
-    var  http = axios.create({baseURL});
-    http.get('/example').then(({data}: any) => {
-        this.res1 = data;
-        this.$nextTick(() => {
-            if (!(<any>window).hljs) return;
-            (<any>window).hljs.highlightBlock(this.$refs.json);
-        })
-    });
-  }
-}
-</script>
+---
 
-```
+### issue
 
-## 接口请求（本地服务代理模式）示例
+https://github.com/zhangzhipeng-git/birdmock-ts/issues/new
 
-in package.json
+### email
 
-```json
-"scripts": {
-    "mock:proxy": "cross-env target=https://zhangzhipeng-git.github.io/ birdmock"
-}
-```
-
-```shell
-npm run mock:proxy
-```
-
-in template
-
-```html
-<template>
-  <div id="app">
-    <pre><code ref="json" class="json">{{res1|json}}</code></pre>
-  </div>
-</template>
-```
-
-in ts
-
-```typescript
-<script lang="ts">
-import { Component, Vue } from 'vue-property-decorator';
-import axios from 'axios';
-@Component({
-  filters: {
-    json(o: any) {
-      return JSON.stringify(o, null, '\t');
-    }
-  }
-})
-export default class App extends Vue {
-  res1: any = {};
-  beforeMount() {
-    const baseURL = process.env.NODE_ENV === 'development' ? '/api' : '';
-    var  http = axios.create({baseURL});
-    http.get('/birdmock/package.json').then(({data}: any) => {
-        this.res1 = data;
-        this.$nextTick(() => {
-            if (!(<any>window).hljs) return;
-            (<any>window).hljs.highlightBlock(this.$refs.json);
-        })
-    });
-  }
-}
-</script>
-
-```
+1029512956@qq.com
