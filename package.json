@@ -1,6 +1,6 @@
 {
   "name": "@bigbigbird/mock",
-  "version": "5.0.7",
+  "version": "5.0.8",
   "description": "前端mock调试",
   "main": "dist/index.js",
   "bin": {
@@ -26,7 +26,8 @@
     "LICENSE",
     "README.md",
     "dist/**/*",
-    "cert/**/*"
+    "cert/**/*",
+    "test.html"
   ],
   "author": "zhangzhipeng",
   "license": "ISC",

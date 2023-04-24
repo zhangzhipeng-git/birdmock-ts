@@ -57,9 +57,10 @@
                 params = JSON.stringify(params);
                 break;
               }
-              if (!headers) headers = {};
               // 非 json
+              if (!headers) headers = {};
               headers['content-type'] = 'application/x-www-form-urlencoded';
+              params = qs.stringify(params);
               break;
           }
         }
