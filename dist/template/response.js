@@ -55,4 +55,11 @@ module.exports = {
             paths: paths,
         };
     },
+    // 自定义响应流程
+    '/diy/rawResponse': {
+        rawResponse: function (req, res, requestParams) {
+            res.setHeader('content-type', 'text/plain');
+            res.end('Hello Word!');
+        },
+    },
 };

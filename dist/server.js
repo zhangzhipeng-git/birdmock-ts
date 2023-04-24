@@ -108,6 +108,7 @@ var CORSEnum;
     CORSEnum["CREDENTIALS"] = "Access-Control-Allow-Credentials";
 })(CORSEnum || (CORSEnum = {}));
 var LOCAL_REG = /localhost|127\.0\.0\.1/;
+var FILE_REG = /\.(?:svg|jpg|jpeg|png|gif|wav|txt|css|html|js)/;
 var DEFAULT_SERVER = 'localhost:4201';
 var Server = /** @class */ (function () {
     function Server() {
@@ -477,6 +478,9 @@ var Server = /** @class */ (function () {
         var value = this.mocks[key];
         if (typeof value === 'function')
             value = value(params);
+        // 自定义了响应函数，则对外暴露请求和响应对象
+        if (typeof value.rawResponse === 'function')
+            return value.rawResponse(req, res, params);
         setTimeout(function () {
             // 自定义响应状态码数据： {statusCode: 200, data: {...真正的响应数据}}
             if (value && value.statusCode) {
@@ -484,7 +488,7 @@ var Server = /** @class */ (function () {
                 value = value.data;
             }
             var isFile = true;
-            var match = key.match(/\.(?:svg|jpg|jpeg|png|gif|wav|txt|css|html|js)/);
+            var match = key.match(FILE_REG);
             if (match) {
                 // 根据接口地址后缀来匹配，模拟返回文件流，如：http://localhost:4201/api/xxx.jpg
                 var k = match[0];

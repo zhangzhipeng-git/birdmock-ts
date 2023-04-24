@@ -1,7 +1,8 @@
 # birdmock（结合 mockjs 开发的本地 mock 服务）
 
 - 不依赖 Webpack 等构建开发工具，可以独立在本地运行 http/https 服务；
-- 支持静态资源获取、上传文件、跨域请求和 https 请求；
+- 支持自定义响应数据、静态资源获取、上传文件、跨域请求和 https 请求；
+- 支持通过 mock 数据的 rawResponse 对外提供 nodejs 的请求和响应接口；
 - 支持正向代理，即从本地启动的服务代理到目标服务；
 - 支持 http/https 请求日志记录；
 - 支持配置其他开发工具的 proxy 代理到 birdmock 启动的服务；
@@ -178,7 +179,7 @@ module.exports = {
 npm run mock:proxy
 ```
 
-**上述 `pathRewrite` 表示会将接口匹配正则 `^/api` 的字符串替换为 `/ipa` ，这和配置文件中的 `rewrite` 配置不同，请求接口会被重写为 `rewrite` 函数执行后的返回值。**
+`P.s. 上述 `pathRewrite`表示会将接口匹配正则`^/api`的字符串替换为`/ipa`，这和配置文件中的`rewrite`配置不同，请求接口会被重写为`rewrite` 函数执行后的返回值。`
 
 ### 请求静态资源
 
@@ -189,9 +190,15 @@ npm run mock:proxy
 mock 文件存放在 `birdmock/mocks` 目录下，该目录下所有以 `.js` 结尾的文件所导出的键值对对象都会被注册到 mock 服务的 mock 数据中，mock 文件示例如下。
 
 ```js
+'use strict';
+var fs = require('fs');
+var path = require('path');
+var resolve = function (p) {
+  return path.resolve(__dirname, p);
+};
 module.exports = {
   // 根据参数返回不同数据
-  '/example': params => {
+  '/example': function (params) {
     if (params.id === 1) {
       return {
         status: 200,
@@ -209,7 +216,7 @@ module.exports = {
     }
   },
   // 通配符匹配接口
-  '/api/*': () => {
+  '/api/*': function () {
     return {
       status: 200,
       data: {
@@ -218,29 +225,35 @@ module.exports = {
     };
   },
   // 请求静态资源，带.xxx后缀
-  '/static/elyra/r-logo.svg': () => {
-    return fs.readFileSync(resolve('./assets/r-logo.svg'));
+  '/static/test/bird.svg': function () {
+    return fs.readFileSync(resolve('../assets/bird.svg'));
   },
   // 请求静态资源，不带.xxx后缀
-  '/elyra/pipeline/export': () => {
+  '/test/bird': function () {
     return {
-      filename: 'python.svg',
-      buffer: fs.readFileSync(resolve('./assets/python.svg')),
+      filename: 'bird.svg',
+      buffer: fs.readFileSync(resolve('../assets/bird.svg')),
     };
   },
   // 上传文件
-  '/upload/file': files => {
+  '/upload/file': function (files) {
     console.log(files, '参数');
-    const fileArr = files.file; // file 为formData的字段名
-    const paths = [];
-    fileArr.forEach(f => {
-      const path = f.path;
+    var fileArr = files.file; // file 为formData的字段名
+    var paths = [];
+    fileArr.forEach(function (f) {
+      var path = f.path;
       paths.push(path);
     });
-
     return {
-      paths,
+      paths: paths,
     };
+  },
+  // 自定义响应流程
+  '/diy/rawResponse': {
+    rawResponse: function (req, res, requestParams) {
+      res.setHeader('content-type', 'text/plain');
+      res.end('Hello Word!');
+    },
   },
 };
 ```
@@ -270,9 +283,21 @@ module.exports = {
           return arr.join('&');
         },
       };
-      function log(url, res) {
-        console.log(`${url}:`, JSON.stringify(res, null, 2));
+
+      function log(ctx) {
+        switch (ctx.responseType) {
+          case 'json':
+            console.log(
+              `${ctx.responseURL}:`,
+              JSON.stringify(ctx.response, null, 2)
+            );
+            return;
+          case 'text':
+          default:
+            console.log(`${ctx.responseURL}:`, ctx.response);
+        }
       }
+
       function request({
         method = 'GET',
         url,
@@ -280,11 +305,11 @@ module.exports = {
         responseType = 'json',
         params,
       }) {
-        var http = new XMLHttpRequest();
+        var ctx = new XMLHttpRequest();
         var src = `${baseUrl}${url}`;
 
         if (params) {
-          switch (method) {
+          switch (method.toUpperCase()) {
             case 'GET':
             case 'DELETE':
               params = qs.stringify(params);
@@ -297,54 +322,59 @@ module.exports = {
                 params = JSON.stringify(params);
                 break;
               }
-              if (!headers) {
-                headers = {};
-              }
+              if (!headers) headers = {};
               // 非 json
               headers['content-type'] = 'application/x-www-form-urlencoded';
               break;
           }
         }
 
-        http.responseType = responseType;
-        http.open(method, src, true);
+        ctx.responseType = responseType;
+        ctx.open(method, src, true);
 
         if (headers) {
           Object.keys(headers).forEach(k => {
-            http.setRequestHeader(k, headers[k]);
+            ctx.setRequestHeader(k, headers[k]);
           });
         }
 
-        http.send(params);
+        ctx.send(params);
         return new Promise(resolve => {
-          http.onload = () => {
-            resolve({ url, res: http });
+          ctx.onload = () => {
+            resolve(ctx);
           };
         });
       }
 
-      request({ url: '/api/example', params: { a: 1, b: 2 } }).then(
-        ({ url, res }) => {
-          log(url, res.response);
-        }
-      );
+      request({
+        url: '/api/example',
+        params: { a: 1, b: 2 },
+      }).then(log);
+
       request({
         url: '/ipa/example',
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         params: { c: 3, d: 4 },
-      }).then(({ url, res }) => {
-        log(url, res.response);
-      });
-      request({ url: '/static/test/bird.svg', responseType: 'text' }).then(
-        ({ url, res }) => {
+      }).then(log);
+
+      request({
+        url: '/static/test/bird.svg',
+        responseType: 'text',
+      })
+        .then(ctx => {
           var style = document.createElement('style');
           style.innerText = 'svg {height: 200px;width:200px}';
           document.head.appendChild(style);
-          document.body.innerHTML = res.responseText;
-          log(url, res.responseText);
-        }
-      );
+          document.body.innerHTML = ctx.responseText;
+          return ctx;
+        })
+        .then(log);
+
+      request({
+        url: '/diy/rawResponse',
+        responseType: 'text',
+      }).then(log);
     </script>
   </body>
 </html>

@@ -85,7 +85,10 @@ enum CORSEnum {
 }
 
 const LOCAL_REG = /localhost|127\.0\.0\.1/;
+const FILE_REG = /\.(?:svg|jpg|jpeg|png|gif|wav|txt|css|html|js)/;
+
 const DEFAULT_SERVER = 'localhost:4201';
+
 declare type RequestType = 'generic' | 'upload' | 'json' | 'xml';
 declare type ResponseType =
   | '.svg'
@@ -529,6 +532,10 @@ class Server {
     let value = this.mocks[key];
     if (typeof value === 'function') value = value(params);
 
+    // 自定义了响应函数，则对外暴露请求和响应对象
+    if (typeof value.rawResponse === 'function')
+      return value.rawResponse(req, res, params);
+
     setTimeout(() => {
       // 自定义响应状态码数据： {statusCode: 200, data: {...真正的响应数据}}
       if (value && value.statusCode) {
@@ -537,7 +544,7 @@ class Server {
       }
 
       let isFile = true;
-      const match = key.match(/\.(?:svg|jpg|jpeg|png|gif|wav|txt|css|html|js)/);
+      const match = key.match(FILE_REG);
       if (match) {
         // 根据接口地址后缀来匹配，模拟返回文件流，如：http://localhost:4201/api/xxx.jpg
         const k = match[0] as ResponseType;

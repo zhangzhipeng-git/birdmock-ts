@@ -18,9 +18,21 @@
           return arr.join('&');
         },
       };
-      function log(url, res) {
-        console.log(`${url}:`, JSON.stringify(res, null, 2));
+
+      function log(ctx) {
+        switch (ctx.responseType) {
+          case 'json':
+            console.log(
+              `${ctx.responseURL}:`,
+              JSON.stringify(ctx.response, null, 2)
+            );
+            return;
+          case 'text':
+          default:
+            console.log(`${ctx.responseURL}:`, ctx.response);
+        }
       }
+
       function request({
         method = 'GET',
         url,
@@ -28,11 +40,11 @@
         responseType = 'json',
         params,
       }) {
-        var http = new XMLHttpRequest();
+        var ctx = new XMLHttpRequest();
         var src = `${baseUrl}${url}`;
 
         if (params) {
-          switch (method) {
+          switch (method.toUpperCase()) {
             case 'GET':
             case 'DELETE':
               params = qs.stringify(params);
@@ -45,54 +57,59 @@
                 params = JSON.stringify(params);
                 break;
               }
-              if (!headers) {
-                headers = {};
-              }
+              if (!headers) headers = {};
               // 非 json
               headers['content-type'] = 'application/x-www-form-urlencoded';
               break;
           }
         }
 
-        http.responseType = responseType;
-        http.open(method, src, true);
+        ctx.responseType = responseType;
+        ctx.open(method, src, true);
 
         if (headers) {
           Object.keys(headers).forEach(k => {
-            http.setRequestHeader(k, headers[k]);
+            ctx.setRequestHeader(k, headers[k]);
           });
         }
 
-        http.send(params);
+        ctx.send(params);
         return new Promise(resolve => {
-          http.onload = () => {
-            resolve({ url, res: http });
+          ctx.onload = () => {
+            resolve(ctx);
           };
         });
       }
 
-      request({ url: '/api/example', params: { a: 1, b: 2 } }).then(
-        ({ url, res }) => {
-          log(url, res.response);
-        }
-      );
+      request({
+        url: '/api/example',
+        params: { a: 1, b: 2 },
+      }).then(log);
+
       request({
         url: '/ipa/example',
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         params: { c: 3, d: 4 },
-      }).then(({ url, res }) => {
-        log(url, res.response);
-      });
-      request({ url: '/static/test/bird.svg', responseType: 'text' }).then(
-        ({ url, res }) => {
+      }).then(log);
+
+      request({
+        url: '/static/test/bird.svg',
+        responseType: 'text',
+      })
+        .then(ctx => {
           var style = document.createElement('style');
           style.innerText = 'svg {height: 200px;width:200px}';
           document.head.appendChild(style);
-          document.body.innerHTML = res.responseText;
-          log(url, res.responseText);
-        }
-      );
+          document.body.innerHTML = ctx.responseText;
+          return ctx;
+        })
+        .then(log);
+
+      request({
+        url: '/diy/rawResponse',
+        responseType: 'text',
+      }).then(log);
     </script>
   </body>
 </html>
