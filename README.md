@@ -1,4 +1,4 @@
-# birdmock（结合 mockjs 开发的本地 mock 服务）
+# birdmock（使用 nodejs 的原生 http/https 模块，结合 mockjs 开发的本地 mock 服务）
 
 - 不依赖 Webpack 等构建开发工具，可以独立在本地运行 http/https 服务；
 - 支持自定义响应数据、静态资源获取、上传文件、跨域请求和 https 请求；
