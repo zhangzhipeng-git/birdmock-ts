@@ -89,7 +89,7 @@ var ServerBoot = /** @class */ (function () {
         return { serverFilePath: serverFilePath, configPath: configPath, mocksPath: mocksPath, logsPath: logsPath };
     };
     /**
-     * 主进程监听mock服务子进程的退出，若非正常退出则重启子进程
+     * 创建子进程
      * @param {string[]} paths 服务路径，配置路径，mocks路径，logs路径
      */
     ServerBoot.spawn = function (paths) {

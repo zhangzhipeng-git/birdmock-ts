@@ -99,9 +99,6 @@
         responseType: 'text',
       })
         .then(ctx => {
-          var style = document.createElement('style');
-          style.innerText = 'svg {height: 200px;width:200px}';
-          document.head.appendChild(style);
           document.body.innerHTML = ctx.responseText;
           return ctx;
         })

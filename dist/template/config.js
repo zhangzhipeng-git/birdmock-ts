@@ -4,7 +4,7 @@ module.exports = {
     watchDebounceTime: 2000,
     // 日志是否格式化响应的json
     parseJSON: false,
-    // birdmock服务（对于客户端源服务来说，通过birdmock开启的服务是第三方服务）
+    // birdmock服务（对于客户端源服务来说，通过birdmock开启的服务是第三方服务），协议设置为 https 则将开启 https 服务
     server: 'localhost:4201',
     // 可选代理服务（可通过server服务代理到目标服务）
     proxy: {

@@ -7,8 +7,6 @@
 - 支持 http/https 请求日志记录；
 - 支持配置其他开发工具的 proxy 代理到 birdmock 启动的服务；
 
-`P.s. 本地 mock 服务是模拟后端的服务，故本地 https 请求会提示连接不安全，这个不影响本地开发使用。`
-
 ## 安装
 
 ---
@@ -73,7 +71,7 @@ module.exports = {
   watchDebounceTime: 2000,
   // 日志是否格式化响应的json
   parseJSON: false,
-  // 本地服务（对于客户端源服务来说，通过birdmock开启的服务是第三方服务）
+  // 本地服务，协议设置为 https 则将开启 https 服务
   server: 'localhost:4201',
   // 可选代理服务（可通过server服务代理到目标服务）
   proxy: {
@@ -117,7 +115,7 @@ module.exports = {
   watchDebounceTime: 2000,
   // 日志是否格式化响应的 json 数据
   parseJSON: false,
-  // 本地服务地址
+  // 本地服务地址，协议设置为 https 则将开启 https 服务
   server: 'http://localhost:4201',
 };
 ```
@@ -129,6 +127,8 @@ module.exports = {
 =====本地模式已启动{/ => http://localhost:4201} { 接口数量:5 }=====
 ```
 
+`P.s. 配置 server 为 https 协议的时候，因为本地 mock 服务证书未颁发，故本地 https 请求会提示连接不安全，这个不影响本地开发使用。`
+
 ### 启动代理 mock 服务
 
 在配置文件中加上 proxy 配置
@@ -139,7 +139,7 @@ module.exports = {
   watchDebounceTime: 2000,
   // 日志是否格式化响应的 json 数据
   parseJSON: false,
-  // 本地服务地址
+  // 本地服务地址，协议设置为 https 则将开启 https 服务
   server: 'http://localhost:4201',
   // 代理配置
   proxy: {
@@ -148,7 +148,6 @@ module.exports = {
       target: 'http://127.0.0.1:4201',
       changeOrigin: true,
       rewrite: function (url) {
-        console.log(url, '/api');
         return url;
       },
     },
@@ -157,7 +156,6 @@ module.exports = {
       target: 'http://127.0.0.1:4202',
       changeOrigin: true,
       rewrite: function (url) {
-        console.log(url, '/');
         return url;
       },
     },
@@ -179,11 +177,11 @@ module.exports = {
 npm run mock:proxy
 ```
 
-`P.s. 上述 `pathRewrite`表示会将接口匹配正则`^/api`的字符串替换为`/ipa`，这和配置文件中的`rewrite`配置不同，请求接口会被重写为`rewrite` 函数执行后的返回值。`
+`P.s. 上述 `pathRewrite`表示会将接口匹配正则`^/api`的字符串替换为`/ipa`，这和配置文件中的`rewrite`配置不同，`rewrite` 函数会将请求接口重写为执行后的返回值。`
 
 ### 请求静态资源
 
-如果接口需要请求静态资源，则应事先在 `birdmock/assets` 目录下放置对应的静态资源，然后在 mock 文件中按照示例来注册请求静态资源的接口。
+如果接口需要请求静态资源，则应事先在 `birdmock/assets` 目录下放置对应的静态资源，然后在 mock 文件中按照 mock 文件示例来注册请求静态资源的接口。
 
 ### mock 文件
 
@@ -258,7 +256,7 @@ module.exports = {
 };
 ```
 
-只要接口地址匹配到了如上述 mock 数据中的“键”（比如 `/example` ），则会返回该键所对应的值。
+只要接口地址匹配到了如上述 mock 数据中的“键”（比如 `/example` ），则会返回该键所对应的值（如果值为函数则执行该函数）。
 
 ### 使用示例
 
@@ -278,13 +276,17 @@ module.exports = {
         stringify: params => {
           var arr = [];
           Object.keys(params).forEach(k => {
-            arr.push(`${k}=${params[k]}`);
+            arr.push(
+              `${k}=${
+                Array.isArray(params[k]) ? params[k].join(',') : params[k]
+              }`
+            );
           });
           return arr.join('&');
         },
       };
 
-      function log(ctx) {
+      function print(ctx) {
         switch (ctx.responseType) {
           case 'json':
             console.log(
@@ -339,6 +341,7 @@ module.exports = {
         }
 
         ctx.send(params);
+
         return new Promise(resolve => {
           ctx.onload = () => {
             resolve(ctx);
@@ -349,32 +352,29 @@ module.exports = {
       request({
         url: '/api/example',
         params: { a: 1, b: 2 },
-      }).then(log);
+      }).then(print);
 
       request({
         url: '/ipa/example',
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         params: { c: 3, d: 4 },
-      }).then(log);
+      }).then(print);
 
       request({
         url: '/static/test/bird.svg',
         responseType: 'text',
       })
         .then(ctx => {
-          var style = document.createElement('style');
-          style.innerText = 'svg {height: 200px;width:200px}';
-          document.head.appendChild(style);
           document.body.innerHTML = ctx.responseText;
           return ctx;
         })
-        .then(log);
+        .then(print);
 
       request({
         url: '/diy/rawResponse',
         responseType: 'text',
-      }).then(log);
+      }).then(print);
     </script>
   </body>
 </html>
