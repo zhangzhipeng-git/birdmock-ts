@@ -19,17 +19,17 @@
         },
       };
 
-      function log(ctx) {
-        switch (ctx.responseType) {
+      function print(xhr) {
+        switch (xhr.responseType) {
           case 'json':
             console.log(
-              `${ctx.responseURL}:`,
-              JSON.stringify(ctx.response, null, 2)
+              `${xhr.responseURL}:`,
+              JSON.stringify(xhr.response, null, 2)
             );
             return;
           case 'text':
           default:
-            console.log(`${ctx.responseURL}:`, ctx.response);
+            console.log(`${xhr.responseURL}:`, xhr.response);
         }
       }
 
@@ -40,7 +40,7 @@
         responseType = 'json',
         params,
       }) {
-        var ctx = new XMLHttpRequest();
+        var xhr = new XMLHttpRequest();
         var src = `${baseUrl}${url}`;
 
         if (params) {
@@ -65,49 +65,49 @@
           }
         }
 
-        ctx.responseType = responseType;
-        ctx.open(method, src, true);
+        xhr.responseType = responseType;
+        xhr.open(method, src, true);
 
         if (headers) {
           Object.keys(headers).forEach(k => {
-            ctx.setRequestHeader(k, headers[k]);
+            xhr.setRequestHeader(k, headers[k]);
           });
         }
 
-        ctx.send(params);
+        xhr.send(params);
         return new Promise(resolve => {
-          ctx.onload = () => {
-            resolve(ctx);
+          xhr.onload = () => {
+            resolve(xhr);
           };
         });
       }
 
       request({
         url: '/api/example',
-        params: { a: 1, b: 2 },
-      }).then(log);
+        params: { delay: 5000 },
+      }).then(print);
+
+      request({
+        url: '/static/test/bird.svg',
+        responseType: 'text',
+      })
+        .then(xhr => {
+          document.body.innerHTML = xhr.responseText;
+          return xhr;
+        })
+        .then(print);
+
+      request({
+        url: '/diy/rawResponse',
+        responseType: 'text',
+      }).then(print);
 
       request({
         url: '/ipa/example',
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         params: { c: 3, d: 4 },
-      }).then(log);
-
-      request({
-        url: '/static/test/bird.svg',
-        responseType: 'text',
-      })
-        .then(ctx => {
-          document.body.innerHTML = ctx.responseText;
-          return ctx;
-        })
-        .then(log);
-
-      request({
-        url: '/diy/rawResponse',
-        responseType: 'text',
-      }).then(log);
+      }).then(print);
     </script>
   </body>
 </html>

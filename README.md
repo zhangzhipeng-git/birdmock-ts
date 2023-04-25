@@ -1,11 +1,15 @@
-# birdmock（使用 nodejs 的原生 http/https 模块，结合 mockjs 开发的本地 mock 服务）
+# birdmock
+
+使用 nodejs 的原生 http/https 模块，结合 mockjs 开发的本地 mock 服务
 
 - 不依赖 Webpack 等构建开发工具，可以独立在本地运行 http/https 服务；
-- 支持自定义响应数据、静态资源获取、上传文件、跨域请求和 https 请求；
-- 支持通过 mock 数据的 rawResponse 对外提供 nodejs 的请求和响应接口；
+- 支持自定义响应数据、静态资源获取、上传文件、跨域、https 请求和日志打印；
+- 支持为 http/https 请求 mock 数据配置延迟响应时间；
+- 支持通过 `rawResponse` 函数对外提供 nodejs 的请求和响应接口；
 - 支持正向代理，即从本地启动的服务代理到目标服务；
-- 支持 http/https 请求日志记录；
 - 支持配置其他开发工具的 proxy 代理到 birdmock 启动的服务；
+
+<font color=green> P.s. mockjs 版本为 1.1.0，mock 数据支持 mockjs 的内置语法。</font>
 
 ## 安装
 
@@ -124,10 +128,10 @@ module.exports = {
 
 ```
 服务器重启中...
-=====本地模式已启动{/ => http://localhost:4201} { 接口数量:5 }=====
+=====本地模式已启动{/ => http://localhost:4201} { 接口数量:6 }=====
 ```
 
-`P.s. 配置 server 为 https 协议的时候，因为本地 mock 服务证书未颁发，故本地 https 请求会提示连接不安全，这个不影响本地开发使用。`
+<font color=green>P.s. 配置 server 为 https 协议的时候，因为本地 mock 服务证书未颁发，故本地 https 请求会提示连接不安全，这个不影响本地开发使用。</font>
 
 ### 启动代理 mock 服务
 
@@ -177,7 +181,7 @@ module.exports = {
 npm run mock:proxy
 ```
 
-`P.s. 上述 `pathRewrite`表示会将接口匹配正则`^/api`的字符串替换为`/ipa`，这和配置文件中的`rewrite`配置不同，`rewrite` 函数会将请求接口重写为执行后的返回值。`
+<font color=green> P.s. 上述 `pathRewrite`表示会将接口匹配正则`^/api`的字符串替换为`/ipa`，这和配置文件中的`rewrite`配置不同，`rewrite` 函数会将请求接口重写为执行后的返回值。</font>
 
 ### 请求静态资源
 
@@ -188,35 +192,29 @@ npm run mock:proxy
 mock 文件存放在 `birdmock/mocks` 目录下，该目录下所有以 `.js` 结尾的文件所导出的键值对对象都会被注册到 mock 服务的 mock 数据中，mock 文件示例如下。
 
 ```js
-'use strict';
-var fs = require('fs');
-var path = require('path');
-var resolve = function (p) {
-  return path.resolve(__dirname, p);
-};
 module.exports = {
-  // 根据参数返回不同数据
+  // 根据参数返回不同数据，并通过 delay 配置延迟响应时间，真正响应的是 data 对象
   '/example': function (params) {
-    if (params.id === 1) {
+    var id = params.id;
+    if (id == 1) {
+      // 延时3s返回
       return {
-        status: 200,
+        delay: 3000,
         data: {
           content: '我是示例mock返回的数据1',
         },
       };
-    } else {
+    } else if (id == 2) {
+      // 无延时返回
       return {
-        status: 400,
-        data: {
-          content: '我是示例mock返回的数据2',
-        },
+        content: '我是示例mock返回的数据2',
       };
     }
   },
-  // 通配符匹配接口
-  '/api/*': function () {
+  // 通配符匹配接口，并通过 delay 配置延迟响应时间，真正响应的是 data 对象
+  '/api/*': function (params = {}) {
     return {
-      status: 200,
+      delay: parseInt(params.delay),
       data: {
         mock: 'birdmock',
       },
@@ -246,7 +244,7 @@ module.exports = {
       paths: paths,
     };
   },
-  // 自定义响应流程
+  // 通过调用 nodejs 的请求和响应接口来响应请求
   '/diy/rawResponse': {
     rawResponse: function (req, res, requestParams) {
       res.setHeader('content-type', 'text/plain');
@@ -256,7 +254,17 @@ module.exports = {
 };
 ```
 
-只要接口地址匹配到了如上述 mock 数据中的“键”（比如 `/example` ），则会返回该键所对应的值（如果值为函数则执行该函数）。
+只要接口地址匹配到了如上述 mock 数据中的“键”，则会返回该键所对应的值：
+
+- 值为普通对象时，nodejs 的 response 对象会将其作为响应数据响应给发起请求的客户端；
+- 值为函数时，会将请求参数作为函数的入参，执行该函数后将返回值作为响应数据响应给发起请求的客户端
+
+值遵循如下规则：
+
+- 如果不需要配置延迟响应和改变响应状态码，则返回的值即为响应数据，如：对象`{xxx: 'yyy'}` 或其他基本类型；
+- 如果需要配置延迟响应时间 ，则值的正确结构为`{delay: 2000, data: {...xxx}}`，其中 delay 为延迟时间，data 为真正要响应的数据；
+- 如果需要改变响应状态码 ，则值的正确结构为`{statusCode: 403, data: {...xxx}}`，其中 statusCode 为状态码，data 为真正要响应的数据；
+- 真正的响应数据支持 mockjs 的内置语法，详情参考 [Mock 官方文档](https://github.com/nuysoft/Mock/wiki)；
 
 ### 使用示例
 
@@ -276,27 +284,23 @@ module.exports = {
         stringify: params => {
           var arr = [];
           Object.keys(params).forEach(k => {
-            arr.push(
-              `${k}=${
-                Array.isArray(params[k]) ? params[k].join(',') : params[k]
-              }`
-            );
+            arr.push(`${k}=${params[k]}`);
           });
           return arr.join('&');
         },
       };
 
-      function print(ctx) {
-        switch (ctx.responseType) {
+      function print(xhr) {
+        switch (xhr.responseType) {
           case 'json':
             console.log(
-              `${ctx.responseURL}:`,
-              JSON.stringify(ctx.response, null, 2)
+              `${xhr.responseURL}:`,
+              JSON.stringify(xhr.response, null, 2)
             );
             return;
           case 'text':
           default:
-            console.log(`${ctx.responseURL}:`, ctx.response);
+            console.log(`${xhr.responseURL}:`, xhr.response);
         }
       }
 
@@ -307,7 +311,7 @@ module.exports = {
         responseType = 'json',
         params,
       }) {
-        var ctx = new XMLHttpRequest();
+        var xhr = new XMLHttpRequest();
         var src = `${baseUrl}${url}`;
 
         if (params) {
@@ -324,34 +328,49 @@ module.exports = {
                 params = JSON.stringify(params);
                 break;
               }
-              if (!headers) headers = {};
               // 非 json
+              if (!headers) headers = {};
               headers['content-type'] = 'application/x-www-form-urlencoded';
+              params = qs.stringify(params);
               break;
           }
         }
 
-        ctx.responseType = responseType;
-        ctx.open(method, src, true);
+        xhr.responseType = responseType;
+        xhr.open(method, src, true);
 
         if (headers) {
           Object.keys(headers).forEach(k => {
-            ctx.setRequestHeader(k, headers[k]);
+            xhr.setRequestHeader(k, headers[k]);
           });
         }
 
-        ctx.send(params);
-
+        xhr.send(params);
         return new Promise(resolve => {
-          ctx.onload = () => {
-            resolve(ctx);
+          xhr.onload = () => {
+            resolve(xhr);
           };
         });
       }
 
       request({
         url: '/api/example',
-        params: { a: 1, b: 2 },
+        params: { delay: 5000 },
+      }).then(print);
+
+      request({
+        url: '/static/test/bird.svg',
+        responseType: 'text',
+      })
+        .then(xhr => {
+          document.body.innerHTML = xhr.responseText;
+          return xhr;
+        })
+        .then(print);
+
+      request({
+        url: '/diy/rawResponse',
+        responseType: 'text',
       }).then(print);
 
       request({
@@ -359,21 +378,6 @@ module.exports = {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         params: { c: 3, d: 4 },
-      }).then(print);
-
-      request({
-        url: '/static/test/bird.svg',
-        responseType: 'text',
-      })
-        .then(ctx => {
-          document.body.innerHTML = ctx.responseText;
-          return ctx;
-        })
-        .then(print);
-
-      request({
-        url: '/diy/rawResponse',
-        responseType: 'text',
       }).then(print);
     </script>
   </body>

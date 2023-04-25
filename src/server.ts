@@ -536,13 +536,20 @@ class Server {
     if (typeof value.rawResponse === 'function')
       return value.rawResponse(req, res, params);
 
-    setTimeout(() => {
-      // 自定义响应状态码数据： {statusCode: 200, data: {...真正的响应数据}}
-      if (value && value.statusCode) {
-        res.statusCode = value.statusCode;
-        value = value.data;
-      }
+    // 自定义响应状态码数据： {statusCode: 200, data: {...真正的响应数据}}
+    if (value && value.statusCode) {
+      res.statusCode = value.statusCode ?? 200;
+      value = value.data;
+    }
 
+    let delay = 0;
+    // 自定义延时响应： {delay: 2000, data: {...真正的响应数据}}
+    if (value && value.delay) {
+      delay = value.delay;
+      value = value.data;
+    }
+
+    setTimeout(() => {
       let isFile = true;
       const match = key.match(FILE_REG);
       if (match) {
@@ -576,7 +583,7 @@ class Server {
             ? value
             : JSON.stringify(value, undefined, parseJSON ? '\t' : undefined))
       );
-    }, (value && value.timeout) || 0);
+    }, delay);
   }
 
   forward2self(

@@ -3,29 +3,30 @@ var fs = require('fs');
 var path = require('path');
 var resolve = function (p) { return path.resolve(__dirname, p); };
 module.exports = {
-    // 根据参数返回不同数据
+    // 根据参数返回不同数据，并通过 delay 配置延迟响应时间，真正响应的是 data 对象
     '/example': function (params) {
-        if (params.id === 1) {
+        var id = params.id;
+        if (id == 1) {
+            // 延时3s返回
             return {
-                status: 200,
+                delay: 3000,
                 data: {
                     content: '我是示例mock返回的数据1',
                 },
             };
         }
-        else {
+        else if (id == 2) {
+            // 无延时返回
             return {
-                status: 400,
-                data: {
-                    content: '我是示例mock返回的数据2',
-                },
+                content: '我是示例mock返回的数据2',
             };
         }
     },
-    // 通配符匹配接口
-    '/api/*': function () {
+    // 通配符匹配接口，并通过 delay 配置延迟响应时间，真正响应的是 data 对象
+    '/api/*': function (params) {
+        if (params === void 0) { params = {}; }
         return {
-            status: 200,
+            delay: parseInt(params.delay),
             data: {
                 mock: 'birdmock',
             },
@@ -55,7 +56,7 @@ module.exports = {
             paths: paths,
         };
     },
-    // 自定义响应流程
+    // 通过调用 nodejs 的请求和响应接口来响应请求
     '/diy/rawResponse': {
         rawResponse: function (req, res, requestParams) {
             res.setHeader('content-type', 'text/plain');

@@ -459,6 +459,7 @@ var Server = /** @class */ (function () {
      */
     Server.prototype.localServerResponse = function (req, res, params) {
         var _this = this;
+        var _a;
         var parseJSON = this.config.parseJSON;
         this.log.info("[".concat(req.headers['host'], "] [").concat(req.url, "]").concat(req.method, "=>\u8BF7\u6C42\u53C2\u6570:\r\n").concat(JSON.stringify(params, undefined, parseJSON ? '\t' : undefined)));
         this.enableCORS(res);
@@ -481,12 +482,18 @@ var Server = /** @class */ (function () {
         // 自定义了响应函数，则对外暴露请求和响应对象
         if (typeof value.rawResponse === 'function')
             return value.rawResponse(req, res, params);
+        // 自定义响应状态码数据： {statusCode: 200, data: {...真正的响应数据}}
+        if (value && value.statusCode) {
+            res.statusCode = (_a = value.statusCode) !== null && _a !== void 0 ? _a : 200;
+            value = value.data;
+        }
+        var delay = 0;
+        // 自定义延时响应： {delay: 2000, data: {...真正的响应数据}}
+        if (value && value.delay) {
+            delay = value.delay;
+            value = value.data;
+        }
         setTimeout(function () {
-            // 自定义响应状态码数据： {statusCode: 200, data: {...真正的响应数据}}
-            if (value && value.statusCode) {
-                res.statusCode = value.statusCode;
-                value = value.data;
-            }
             var isFile = true;
             var match = key.match(FILE_REG);
             if (match) {
@@ -513,7 +520,7 @@ var Server = /** @class */ (function () {
                 (isFile
                     ? value
                     : JSON.stringify(value, undefined, parseJSON ? '\t' : undefined)));
-        }, (value && value.timeout) || 0);
+        }, delay);
     };
     Server.prototype.forward2self = function (req, res, params) {
         this.setMocks();
