@@ -63,7 +63,6 @@ npm run mock
 并且在启动 mock 服务之前，会自动地在项目根目录生成 birdmock 文件夹，其目录结构如下。
 
 ```
- -项目根路径
  -birdmock
     -assets         # 静态资源目录
     -logs           # 日志目录
