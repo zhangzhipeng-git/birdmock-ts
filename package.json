@@ -27,7 +27,8 @@
     "README.md",
     "dist/**/*",
     "cert/**/*",
-    "test.html"
+    "test.html",
+    "ylt.png"
   ],
   "author": "zhangzhipeng",
   "license": "ISC",

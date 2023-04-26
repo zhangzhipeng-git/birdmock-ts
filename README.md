@@ -12,8 +12,6 @@
 
 ## 特性
 
----
-
 - 不依赖 Webpack 等构建开发工具，可以独立在本地运行 http/https 服务；
 - 支持自定义响应数据、静态资源获取、上传文件、跨域、https 请求和日志打印；
 - 支持为 http/https 请求 mock 数据配置延迟响应时间；
@@ -24,8 +22,6 @@
 <font color=green> P.s. mockjs 版本为 1.1.0，mock 数据支持 mockjs 的内置语法。</font>
 
 ## 安装
-
----
 
 使用 npm 安装
 
@@ -40,8 +36,6 @@ yarn add @bigbigbird/mock -D
 ```
 
 ## 使用
-
----
 
 ### 启动默认的 mock 服务
 
@@ -397,8 +391,6 @@ module.exports = {
 ```
 
 ## 问题反馈
-
----
 
 ### issue
 
