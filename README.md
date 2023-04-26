@@ -272,7 +272,7 @@ module.exports = {
 - 如果需要改变响应状态码 ，则值的正确结构为`{statusCode: 403, data: {...xxx}}`，其中 statusCode 为状态码，data 为真正要响应的数据；
 - 真正的响应数据支持 mockjs 的内置语法，详情参考 [Mock 官方文档](https://github.com/nuysoft/Mock/wiki)；
 
-### 使用示例
+### 请求示例
 
 ```html
 <!DOCTYPE html>
