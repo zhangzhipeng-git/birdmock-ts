@@ -129,7 +129,7 @@ module.exports = {
 };
 ```
 
-在修改配置文件后，mock 服务会自动地进行重启，并在控制台打印如下内容。
+修改 `birdmock/config.js` 或 `birdmock/mocks` 中的文件后，mock 服务会自动地进行重启，并在控制台打印类似如下内容。
 
 ```
 服务器重启中...
